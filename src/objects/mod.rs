@@ -1,4 +1,5 @@
 mod area_object;
+mod ids;
 mod line_object;
 mod point_object;
 mod text_object;
@@ -19,6 +20,8 @@ pub use line_object::LineObject;
 pub use point_object::PointObject;
 pub use text_object::{HorizontalAlign, TextGeometry, TextObject, VerticalAlign, WrapBox};
 
+pub use ids::ObjectId;
+pub(crate) use ids::ObjectKey;
 pub use map_object::MapObject;
 
 use crate::{

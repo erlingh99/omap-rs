@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use quick_xml::{
     Reader, Writer,
@@ -179,21 +180,57 @@ impl SymbolSet {
         CombinedLine
     );
 
-    /// Remove and return the [`Symbol`] the handle names.
-    pub fn remove(&mut self, id: SymbolId) -> Option<Symbol> {
+    /// Remove the [`Symbol`] the handle names, returning it as the set shared
+    /// it. The handle stays reserved for [`SymbolSet::restore`].
+    pub fn remove(&mut self, id: SymbolId) -> Option<Arc<Symbol>> {
         self.symbols.remove(id.0)
     }
 
-    /// Remove and return the first [`Symbol`] with the given [`Code`].
-    pub fn remove_by_code(&mut self, code: Code) -> Option<Symbol> {
+    /// Remove the first [`Symbol`] with the given [`Code`], returning its
+    /// handle, its index and the symbol, which [`SymbolSet::restore`] takes back.
+    pub fn remove_by_code(&mut self, code: Code) -> Option<(SymbolId, usize, Arc<Symbol>)> {
         let index = self.values().position(|s| s.common().code == code)?;
-        self.symbols.remove_at(index)
+        self.remove_index(index)
     }
 
-    /// Remove and return the first [`Symbol`] with the given name.
-    pub fn remove_by_name(&mut self, name: &str) -> Option<Symbol> {
+    /// Remove the first [`Symbol`] with the given name, returning its handle,
+    /// its index and the symbol, which [`SymbolSet::restore`] takes back.
+    pub fn remove_by_name(&mut self, name: &str) -> Option<(SymbolId, usize, Arc<Symbol>)> {
         let index = self.values().position(|s| s.common().name == name)?;
-        self.symbols.remove_at(index)
+        self.remove_index(index)
+    }
+
+    fn remove_index(&mut self, index: usize) -> Option<(SymbolId, usize, Arc<Symbol>)> {
+        let id = self.symbols.id_at(index)?;
+        Some((SymbolId(id), index, self.symbols.remove_at(index)?))
+    }
+
+    /// Put a removed symbol back under its own handle at file index `index`.
+    /// Objects and combined symbols that still name `id` use it again.
+    ///
+    /// # Errors
+    ///
+    /// Hands `symbol` back if `id` is not a removed handle of this set, or
+    /// `index > self.len()`. A handle does not record what issued it, so one
+    /// from elsewhere naming a slot removed here is taken.
+    pub fn restore(
+        &mut self,
+        id: SymbolId,
+        symbol: Arc<Symbol>,
+        index: usize,
+    ) -> std::result::Result<(), Arc<Symbol>> {
+        self.symbols.restore(id.0, symbol, index)
+    }
+
+    /// The shared symbol behind a handle; a copy of this set holds the same
+    /// [`Arc`] until either side changes that symbol.
+    pub fn get_arc(&self, id: SymbolId) -> Option<&Arc<Symbol>> {
+        self.symbols.get_arc(id.0)
+    }
+
+    /// Put `symbol` in place of the symbol `id` names, returning the one replaced.
+    pub fn replace(&mut self, id: SymbolId, symbol: Arc<Symbol>) -> Option<Arc<Symbol>> {
+        self.symbols.replace(id.0, symbol)
     }
 
     /// Find a symbol by its [`Code`]. The first match is returned.
