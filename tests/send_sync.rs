@@ -31,6 +31,8 @@ fn handles_are_copy_and_hashable() {
     assert_handle::<omap::symbols::PathSymbolId>();
     assert_handle::<omap::colors::ColorId>();
     assert_handle::<omap::colors::SpotColorId>();
+    assert_handle::<omap::objects::ObjectId>();
+    assert_handle::<omap::parts::PartId>();
 }
 
 #[test]

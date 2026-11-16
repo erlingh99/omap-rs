@@ -45,6 +45,12 @@ const SCALE_4_000: NonZeroU32 = NonZeroU32::new(4_000).unwrap();
 /// relative the ref point with positive y towards the magnetic north
 ///
 /// The Undo/Redo history and printer information is ignored
+///
+/// Cloning is cheap: colors, symbols, parts and objects are shared between the
+/// copies, and changing one copy copies only the items the change touches, so
+/// a copy can be handed to another thread while the original is edited.
+/// Removing a color, symbol, part or object leaves its handle reserved, so it
+/// can be restored under that handle and references to it resolve again.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Omap {
@@ -366,7 +372,7 @@ impl Omap {
     /// Iterate through all objects of every map part in a flat iterator.
     ///
     /// The whole-map counterpart of [`MapPart::iter_all_objects`]; parts are
-    /// visited in order, objects within a part in no particular order.
+    /// visited in order, objects within a part in file order.
     pub fn iter_all_objects(&self) -> impl Iterator<Item = &MapObject> {
         self.parts.iter().flat_map(MapPart::iter_all_objects)
     }
@@ -374,7 +380,8 @@ impl Omap {
     /// Iterate mutably through all objects of every map part in a flat iterator.
     ///
     /// The whole-map counterpart of [`MapPart::iter_all_objects_mut`]; parts are
-    /// visited in order, objects within a part in no particular order.
+    /// visited in order, objects within a part in file order. On a map
+    /// that shares its objects with a copy, this copies every object.
     pub fn iter_all_objects_mut(&mut self) -> impl Iterator<Item = &mut MapObject> {
         self.parts
             .iter_mut()
@@ -446,22 +453,70 @@ impl Omap {
     ///
     /// Handles you already hold stay valid across this call — only the map's own
     /// references to removed values change. [`Omap::validate`] reports the
-    /// references this removes.
+    /// references this removes. Only values that hold a dangling reference are
+    /// changed, so a copy of the map keeps sharing the rest.
     pub fn prune_dangling_references(&mut self) {
+        use crate::prune::{Prune as _, color_dangles, symbol_dangles};
+
         let live = crate::prune::Live {
             symbols: self.symbols.ids().map(|id| id.0).collect(),
             colors: self.colors.ids().map(|id| id.0).collect(),
         };
 
-        use crate::prune::Prune as _;
-        for color in self.colors.values_mut() {
-            color.prune(&live);
+        let colors: Vec<_> = self
+            .colors
+            .ids()
+            .filter(|&id| {
+                self.colors
+                    .get(id)
+                    .is_some_and(|c| color_dangles(&c, &live))
+            })
+            .collect();
+        for id in colors {
+            if let Some(color) = self.colors.get_mut(id) {
+                color.prune(&live);
+            }
         }
-        for symbol in self.symbols.values_mut() {
-            symbol.prune(&live);
+        let symbols: Vec<_> = self
+            .symbols
+            .ids()
+            .filter(|&id| {
+                self.symbols
+                    .get(id)
+                    .is_some_and(|s| symbol_dangles(&s, &self.symbols, &live))
+            })
+            .collect();
+        for id in symbols {
+            if let Some(symbol) = self.symbols.get_mut(id) {
+                symbol.prune(&live);
+            }
         }
-        for object in self.iter_all_objects_mut() {
-            object.prune(&live);
+        let dangling = |object: &MapObject| {
+            object
+                .symbol()
+                .is_some_and(|symbol| !live.symbols.contains(&symbol.0))
+        };
+        let parts: Vec<_> = self.parts.ids().collect();
+        for part in parts {
+            let objects: Vec<_> = self
+                .parts
+                .get_by_id(part)
+                .into_iter()
+                .flat_map(|p| p.objects())
+                .filter(|(_, object)| dangling(object))
+                .map(|(id, _)| id)
+                .collect();
+            if objects.is_empty() {
+                continue;
+            }
+            let Some(p) = self.parts.get_by_id_mut(part) else {
+                continue;
+            };
+            for id in objects {
+                if let Some(object) = p.object_mut(id) {
+                    object.prune(&live);
+                }
+            }
         }
     }
 
