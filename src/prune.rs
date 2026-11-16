@@ -14,6 +14,7 @@ use std::collections::HashSet;
 
 use crate::colors::{ColorId, ColorKey, MixedColor, SymbolColor};
 use crate::objects::MapObject;
+use crate::symbols::PrivatePart;
 use crate::symbols::{
     AreaOrLineSymbol, AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, Element, LineSymbol,
     PointSymbol, PublicOrPrivateSymbol, Symbol, SymbolId, SymbolKey, TextSymbol,
@@ -33,6 +34,44 @@ impl Live {
     fn symbol<T: Copy + Into<SymbolId>>(&self, id: T) -> Option<T> {
         self.symbols.contains(&id.into().0).then_some(id)
     }
+}
+
+/// Whether pruning `color` would change it.
+pub(crate) fn color_dangles(color: &crate::colors::Color, live: &Live) -> bool {
+    match color {
+        crate::colors::Color::SpotColor(_) => false,
+        crate::colors::Color::MixedColor(mixed) => mixed
+            .components
+            .iter()
+            .any(|component| live.color(component.color).is_none()),
+    }
+}
+
+/// Whether `symbol` itself names a color or a component symbol that is gone. A combined symbol's public components are symbols of their own: a color gone from one of them is pruned there, not here.
+pub(crate) fn symbol_dangles(
+    symbol: &Symbol,
+    symbols: &crate::symbols::SymbolSet,
+    live: &Live,
+) -> bool {
+    match symbol {
+        Symbol::CombinedArea(combined) => combined.components().any(|p| component_dangles(p, live)),
+        Symbol::CombinedLine(combined) => combined.components().any(|p| component_dangles(p, live)),
+        _ => any_gone(symbol.colors(symbols), live),
+    }
+}
+
+fn component_dangles<W: Copy + Into<SymbolId>, P: PrivatePart>(
+    part: &PublicOrPrivateSymbol<W, P>,
+    live: &Live,
+) -> bool {
+    match part {
+        PublicOrPrivateSymbol::Public(id) => live.symbol(*id).is_none(),
+        PublicOrPrivateSymbol::Private(private) => any_gone(private.colors(), live),
+    }
+}
+
+fn any_gone(colors: Vec<ColorId>, live: &Live) -> bool {
+    colors.iter().any(|color| !live.colors.contains(&color.0))
 }
 
 /// Drop every handle a value holds that no longer resolves.

@@ -1,30 +1,117 @@
+use std::sync::Arc;
+
 use quick_xml::{
     Reader, Writer,
     events::{BytesEnd, BytesStart, Event},
 };
 
-use super::MapPart;
+use super::{MapPart, PartId, PartKey};
+use crate::arena::Arena;
 use crate::{Error, OmapSection, Result, symbols::SymbolSet};
 
 /// An ordered collection of map parts (layers).
+///
+/// Parts are named by [`PartId`] handles as well as by position. Cloning is
+/// cheap: the copies share every part until one of them changes it.
 #[derive(Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct MapParts(Vec<MapPart>);
+pub struct MapParts(Arena<MapPart, PartKey>);
+
+/// Iterator over the parts of [`MapParts`], in order.
+#[derive(Clone, Debug)]
+pub struct Iter<'a>(std::slice::Iter<'a, (PartKey, Arc<MapPart>)>);
+
+impl<'a> Iterator for Iter<'a> {
+    type Item = &'a MapPart;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(_, part)| part.as_ref())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for Iter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back().map(|(_, part)| part.as_ref())
+    }
+}
+
+impl ExactSizeIterator for Iter<'_> {}
+
+impl std::iter::FusedIterator for Iter<'_> {}
+
+/// Mutable iterator over the parts of [`MapParts`], in order. A part shared
+/// with a copy of the map is copied when the iterator reaches it.
+#[derive(Debug)]
+pub struct IterMut<'a>(std::slice::IterMut<'a, (PartKey, Arc<MapPart>)>);
+
+impl<'a> Iterator for IterMut<'a> {
+    type Item = &'a mut MapPart;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(_, part)| Arc::make_mut(part))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for IterMut<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back().map(|(_, part)| Arc::make_mut(part))
+    }
+}
+
+impl ExactSizeIterator for IterMut<'_> {}
+
+impl std::iter::FusedIterator for IterMut<'_> {}
+
+/// Owning iterator over the parts of [`MapParts`], in order.
+#[derive(Debug)]
+pub struct IntoIter(std::vec::IntoIter<MapPart>);
+
+impl Iterator for IntoIter {
+    type Item = MapPart;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for IntoIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back()
+    }
+}
+
+impl ExactSizeIterator for IntoIter {}
+
+impl std::iter::FusedIterator for IntoIter {}
 
 impl MapParts {
     /// Create a new empty [`MapParts`] object
     pub fn new() -> Self {
-        Self(Vec::new())
+        Self(Arena::new())
     }
 
     /// Create a new [`MapParts`] object with a [`MapPart`] named "Map"
     pub fn new_with_default_part() -> Self {
-        Self(vec![MapPart::new("Map")])
+        let mut parts = Self::new();
+        let _id = parts.push(MapPart::new("Map"));
+        parts
     }
 
-    /// Add a new map part to the end of the collection.
-    pub fn push(&mut self, part: MapPart) {
-        self.0.push(part);
+    /// Add a new map part to the end of the collection and return its handle.
+    pub fn push(&mut self, part: MapPart) -> PartId {
+        PartId(self.0.push(part))
     }
 
     /// Get the number of map parts.
@@ -37,32 +124,29 @@ impl MapParts {
         self.0.is_empty()
     }
 
-    /// Merge all map parts into a single part
+    /// Merge all map parts into the first one, which keeps its handle. The
+    /// moved objects get new handles in it; their old ones no longer resolve.
+    /// The merged parts' handles must not be restored: their objects now live
+    /// in the first part.
     /// If `new_name` is some, then the new name is applied, else the name of the first map part is kept
     pub fn merge_all_parts(&mut self, new_name: Option<String>) {
-        if self.0.len() > 1 {
-            let mut first = self.0.remove(0);
-
-            let mut pop_parts = Vec::with_capacity(self.0.len());
-            while let Some(part) = self.0.pop() {
-                pop_parts.push(part);
+        while let Some(part) = self.0.remove_at(1) {
+            if let Some(first) = self.0.get_at_mut(0) {
+                first.merge(Arc::unwrap_or_clone(part));
             }
-
-            for part in pop_parts.into_iter().rev() {
-                first.merge(part);
-            }
-            self.0.push(first);
         }
 
         if let Some(name) = new_name
-            && let Some(first) = self.0.first_mut()
+            && let Some(first) = self.0.get_at_mut(0)
         {
             first.name = name;
         }
     }
 
     /// Merge two of the map parts.
-    /// The second part is merged into the first part. The name of the first part is kept
+    /// The second part is merged into the first part. The name and handle of the first part are kept;
+    /// the moved objects get new handles in it and their old ones no longer resolve. The second
+    /// part's handle must not be restored: its objects now live in the first part.
     /// The order of parts is also kept
     ///
     /// # Errors
@@ -72,77 +156,128 @@ impl MapParts {
     pub fn merge_two_parts(&mut self, mut part_1_index: usize, part_2_index: usize) -> Result<()> {
         if part_1_index >= self.len() || part_2_index >= self.len() || part_1_index == part_2_index
         {
-            Err(Error::MapPartMergeError)
-        } else {
-            let part2 = self.0.remove(part_2_index);
-            if part_1_index > part_2_index {
-                part_1_index -= 1;
-            }
-            self.0[part_1_index].merge(part2);
-            Ok(())
+            return Err(Error::MapPartMergeError);
         }
+        let part2 = self
+            .0
+            .remove_at(part_2_index)
+            .ok_or(Error::MapPartMergeError)?;
+        if part_1_index > part_2_index {
+            part_1_index -= 1;
+        }
+        self.0
+            .get_at_mut(part_1_index)
+            .ok_or(Error::MapPartMergeError)?
+            .merge(Arc::unwrap_or_clone(part2));
+        Ok(())
     }
 
-    /// Remove and return the map part at the given index, or `None` if out of bounds.
-    pub fn remove(&mut self, index: usize) -> Option<MapPart> {
-        if index < self.len() {
-            Some(self.0.remove(index))
-        } else {
-            None
-        }
+    /// Remove the map part at the given index, returning its handle and the
+    /// part as the collection shared it, or `None` if out of bounds. Its handle
+    /// stays reserved for [`MapParts::restore`].
+    pub fn remove(&mut self, index: usize) -> Option<(PartId, Arc<MapPart>)> {
+        let id = self.0.id_at(index)?;
+        Some((PartId(id), self.0.remove_at(index)?))
+    }
+
+    /// Remove the map part `id` names. Its handle stays reserved for
+    /// [`MapParts::restore`].
+    pub fn remove_by_id(&mut self, id: PartId) -> Option<Arc<MapPart>> {
+        self.0.remove(id.0)
+    }
+
+    /// Put a removed part back under its own handle at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Hands `part` back if `id` is not a removed handle of this collection, or
+    /// `index > self.len()`. A handle does not record what issued it, so one
+    /// from elsewhere naming a slot removed here is taken.
+    pub fn restore(
+        &mut self,
+        id: PartId,
+        part: Arc<MapPart>,
+        index: usize,
+    ) -> std::result::Result<(), Arc<MapPart>> {
+        self.0.restore(id.0, part, index)
     }
 
     /// Case sensitive
     pub fn by_name(&self, name: &str) -> Option<&MapPart> {
-        self.0.iter().find(|p| p.name.as_str() == name)
+        self.0.values().find(|p| p.name.as_str() == name)
     }
 
     /// Case sensitive
     pub fn by_name_mut(&mut self, name: &str) -> Option<&mut MapPart> {
-        self.0.iter_mut().find(|p| p.name.as_str() == name)
+        let index = self.0.values().position(|p| p.name.as_str() == name)?;
+        self.0.get_at_mut(index)
     }
 
     /// Get a map part by its index.
     pub fn get(&self, index: usize) -> Option<&MapPart> {
-        if index >= self.0.len() {
-            None
-        } else {
-            Some(&self.0[index])
-        }
+        self.0.get_at(index)
     }
 
     /// Get a mutable reference to a map part by its index.
     pub fn get_mut(&mut self, index: usize) -> Option<&mut MapPart> {
-        if index >= self.0.len() {
-            None
-        } else {
-            Some(&mut self.0[index])
-        }
+        self.0.get_at_mut(index)
+    }
+
+    /// Get the map part `id` names.
+    pub fn get_by_id(&self, id: PartId) -> Option<&MapPart> {
+        self.0.get(id.0)
+    }
+
+    /// Get the map part `id` names, to change.
+    pub fn get_by_id_mut(&mut self, id: PartId) -> Option<&mut MapPart> {
+        self.0.get_mut(id.0)
+    }
+
+    /// The shared part behind a handle; a copy of the map holds the same
+    /// [`Arc`] until either side changes that part.
+    pub fn get_arc(&self, id: PartId) -> Option<&Arc<MapPart>> {
+        self.0.get_arc(id.0)
+    }
+
+    /// The handle of the part at `index`.
+    pub fn id_at(&self, index: usize) -> Option<PartId> {
+        self.0.id_at(index).map(PartId)
+    }
+
+    /// The index of the part `id` names.
+    pub fn index_of(&self, id: PartId) -> Option<usize> {
+        self.0.position(id.0)
+    }
+
+    /// The handle of every part, in order.
+    pub fn ids(&self) -> impl Iterator<Item = PartId> {
+        self.0.iter().map(|(key, _)| PartId(key))
     }
 
     /// Iterate over map parts.
-    pub fn iter(&self) -> std::slice::Iter<'_, MapPart> {
-        self.0.iter()
+    pub fn iter(&self) -> Iter<'_> {
+        Iter(self.0.entries())
     }
 
     /// Iterate mutably over map parts.
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, MapPart> {
-        self.0.iter_mut()
+    pub fn iter_mut(&mut self) -> IterMut<'_> {
+        IterMut(self.0.entries_mut())
     }
 }
 
 impl IntoIterator for MapParts {
     type Item = MapPart;
-    type IntoIter = std::vec::IntoIter<MapPart>;
+    type IntoIter = IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        let parts: Vec<MapPart> = self.0.into_values().map(Arc::unwrap_or_clone).collect();
+        IntoIter(parts.into_iter())
     }
 }
 
 impl<'a> IntoIterator for &'a MapParts {
     type Item = &'a MapPart;
-    type IntoIter = std::slice::Iter<'a, MapPart>;
+    type IntoIter = Iter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -151,7 +286,7 @@ impl<'a> IntoIterator for &'a MapParts {
 
 impl<'a> IntoIterator for &'a mut MapParts {
     type Item = &'a mut MapPart;
-    type IntoIter = std::slice::IterMut<'a, MapPart>;
+    type IntoIter = IterMut<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
@@ -165,12 +300,12 @@ impl MapParts {
         symbols: &SymbolSet,
     ) -> Result<()> {
         writer.write_event(Event::Start(BytesStart::new("parts").with_attributes([
-            ("count", self.0.len().to_string().as_str()),
+            ("count", self.len().to_string().as_str()),
             ("current", "0"),
         ])))?;
         writer.get_mut().write_all(b"\n")?;
 
-        for part in &self.0 {
+        for part in self {
             part.write(writer, symbols)?;
             writer.get_mut().write_all(b"\n")?;
         }
@@ -183,14 +318,14 @@ impl MapParts {
         reader: &mut Reader<R>,
         symbols: &SymbolSet,
     ) -> Result<Self> {
-        let mut parts = Vec::new();
+        let mut parts = Self::new();
 
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => {
                     if matches!(bytes_start.local_name().as_ref(), "part") {
-                        parts.push(MapPart::parse(reader, &bytes_start, symbols)?);
+                        let _id = parts.push(MapPart::parse(reader, &bytes_start, symbols)?);
                     }
                 }
                 Event::End(_) => break,
@@ -201,6 +336,6 @@ impl MapParts {
             }
         }
 
-        Ok(Self(parts))
+        Ok(parts)
     }
 }

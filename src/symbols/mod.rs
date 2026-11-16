@@ -11,6 +11,7 @@ mod symbol_set;
 mod text_symbol;
 
 pub use area_symbol::{AreaSymbol, ClippingOption, FillPattern};
+pub(crate) use combined_symbol::PrivatePart;
 pub use combined_symbol::{CombinedAreaSymbol, CombinedLineSymbol, CombinedSymbol};
 pub(crate) use ids::SymbolKey;
 pub use ids::{

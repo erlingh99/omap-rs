@@ -34,7 +34,7 @@ geo_ref = [
     "dep:chrono",
 ]
 
-serde = ["dep:serde", "geo-types/serde", "linestring2bezier/serde", "slotmap/serde"]
+serde = ["dep:serde", "serde/rc", "geo-types/serde", "linestring2bezier/serde", "slotmap/serde"]
 
 [package.metadata.docs.rs]
 all-features = true

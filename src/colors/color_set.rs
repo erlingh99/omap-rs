@@ -7,6 +7,8 @@ use super::{
     Cmyk, Color, ColorComponent, ColorId, ColorKey, ColorRef, MixedColor, MixedColorId, Rgb,
     SpotColor, SpotColorId, color::ColorParseReturn,
 };
+use std::sync::Arc;
+
 use crate::arena::Arena;
 use crate::utils::{UnitF64, try_get_attr_raw};
 use crate::{Error, OmapSection, Result};
@@ -78,14 +80,46 @@ impl ColorSet {
         Ok(ColorId(self.0.insert(index, color.into())))
     }
 
-    /// Remove a color by its priority index.
-    pub fn remove_at(&mut self, priority: usize) -> Option<Color> {
-        self.0.remove_at(priority)
+    /// Remove a color by its priority index, returning its handle and the
+    /// color as the set shared it. The handle stays reserved for
+    /// [`ColorSet::restore`].
+    pub fn remove_at(&mut self, priority: usize) -> Option<(ColorId, Arc<Color>)> {
+        let id = self.0.id_at(priority)?;
+        Some((ColorId(id), self.0.remove_at(priority)?))
     }
 
-    /// Remove a color by its handle.
-    pub fn remove(&mut self, id: ColorId) -> Option<Color> {
+    /// Remove a color by its handle, returning it as the set shared it. The
+    /// handle stays reserved for [`ColorSet::restore`].
+    pub fn remove(&mut self, id: ColorId) -> Option<Arc<Color>> {
         self.0.remove(id.0)
+    }
+
+    /// Put a removed color back under its own handle with priority `priority`.
+    /// Symbols that still name `id` use it again.
+    ///
+    /// # Errors
+    ///
+    /// Hands `color` back if `id` is not a removed handle of this set, or
+    /// `priority > self.len()`. A handle does not record what issued it, so one
+    /// from elsewhere naming a slot removed here is taken.
+    pub fn restore(
+        &mut self,
+        id: ColorId,
+        color: Arc<Color>,
+        priority: usize,
+    ) -> std::result::Result<(), Arc<Color>> {
+        self.0.restore(id.0, color, priority)
+    }
+
+    /// The shared color behind a handle; a copy of this set holds the same
+    /// [`Arc`] until either side changes that color.
+    pub fn get_arc(&self, id: ColorId) -> Option<&Arc<Color>> {
+        self.0.get_arc(id.0)
+    }
+
+    /// Put `color` in place of the color `id` names, returning the one replaced.
+    pub fn replace(&mut self, id: ColorId, color: Arc<Color>) -> Option<Arc<Color>> {
+        self.0.replace(id.0, color)
     }
 
     /// Returns `true` if `id` names a color still in this set.
@@ -190,7 +224,7 @@ impl ColorSet {
         self.0.values()
     }
 
-    /// Mutably iterate over the colors, in no particular order.
+    /// Mutably iterate over the colors in priority order.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Color> {
         self.0.values_mut()
     }
