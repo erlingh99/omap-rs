@@ -1,6 +1,6 @@
 [package]
 name = "omap"
-version = "0.12.2"
+version = "0.13.0"
 edition = "2024"
 authors = ["Øyvind Hjermstad <@yvind>"]
 description = "Interact with or write new Open Orienteering Mapper omap-files"
@@ -34,7 +34,7 @@ geo_ref = [
     "dep:chrono",
 ]
 
-serde = ["dep:serde", "geo-types/serde", "linestring2bezier/serde", "slotmap/serde"]
+serde = ["dep:serde", "serde/rc", "geo-types/serde", "linestring2bezier/serde", "slotmap/serde"]
 
 [package.metadata.docs.rs]
 all-features = true
