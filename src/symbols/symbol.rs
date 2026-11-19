@@ -197,19 +197,23 @@ impl Symbol {
 
     impl_symbol_getter!(custom_icon -> Option<&str>, |s| s.custom_icon.as_deref());
     impl_symbol_getter!(has_custom_icon -> bool, |s| s.custom_icon.is_some());
-    impl_symbol_setter!(set_custom_icon(icon: Option<String>), |s| s.custom_icon = icon);
+    impl_symbol_setter!(set_custom_icon(icon: Option<String>), |s| s.custom_icon =
+        icon);
     impl_symbol_getter!(code -> Code, |s| s.code);
     impl_symbol_setter!(set_code(code: Code), |s| s.code = code);
     impl_symbol_getter!(is_helper_symbol -> bool, |s| s.is_helper_symbol);
-    impl_symbol_setter!(set_helper_symbol(is_helper: bool), |s| s.is_helper_symbol = is_helper);
+    impl_symbol_setter!(set_helper_symbol(is_helper: bool), |s| s.is_helper_symbol =
+        is_helper);
     impl_symbol_getter!(is_hidden -> bool, |s| s.is_hidden);
     impl_symbol_setter!(set_hidden(is_hidden: bool), |s| s.is_hidden = is_hidden);
     impl_symbol_getter!(is_protected -> bool, |s| s.is_protected);
-    impl_symbol_setter!(set_protected(is_protected: bool), |s| s.is_protected = is_protected);
+    impl_symbol_setter!(set_protected(is_protected: bool), |s| s.is_protected =
+        is_protected);
     impl_symbol_getter!(name -> &str, |s| s.name.as_str());
     impl_symbol_setter!(set_name(name: String), |s| s.name = name);
     impl_symbol_getter!(description -> &str, |s| s.description.as_str());
-    impl_symbol_setter!(set_description(description: String), |s| s.description = description);
+    impl_symbol_setter!(set_description(description: String), |s| s.description =
+        description);
 
     /// The kind of this symbol, which is also the kind of any handle to it.
     pub fn kind(&self) -> SymbolKind {
