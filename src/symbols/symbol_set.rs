@@ -167,7 +167,7 @@ impl SymbolSet {
 
     /// The integer the `.omap` format stores for a symbol reference. No symbol,
     /// or a removed one, is the format's `-1` sentinel.
-    pub fn file_index(&self, id: Option<impl Into<SymbolId>>) -> i32 {
+    pub(crate) fn file_index(&self, id: Option<impl Into<SymbolId>>) -> i32 {
         id.and_then(|id| self.position(id))
             .map_or(-1, |index| index as i32)
     }

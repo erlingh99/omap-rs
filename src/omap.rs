@@ -285,6 +285,11 @@ impl Omap {
 
     /// Write the map to anything that implements [`Write`]
     ///
+    /// The format cannot hold a reference to a removed color or symbol, so
+    /// the map is written as [`Omap::prune_dangling_references`] would leave
+    /// it. The map itself is not changed, and is only copied if something
+    /// dangles. Call [`Omap::validate`] first to catch such references.
+    ///
     /// Symbols are written in the order the symbol set holds them. Call
     /// [`crate::symbols::SymbolSet::sort`] first to write them by
     /// [`crate::Code`].
@@ -293,6 +298,16 @@ impl Omap {
     ///
     /// Returns an error if any of the map data cannot be serialized.
     pub fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
+        if self.validate().is_ok() {
+            return self.write_pruned(writer);
+        }
+        let mut pruned = self.clone();
+        pruned.prune_dangling_references();
+        pruned.write_pruned(writer)
+    }
+
+    /// Write a map that holds no dangling reference.
+    fn write_pruned<W: Write>(&self, writer: &mut W) -> Result<()> {
         let mut writer = Writer::new(writer);
 
         XmlDeclaration::write(&mut writer)?;
@@ -658,6 +673,56 @@ mod tests {
             "a dangling reference must prune to None"
         );
         assert!(map.validate().is_ok());
+        Ok(())
+    }
+
+    /// A map whose objects, symbols and colors dangle: a point object drawn
+    /// with a removed symbol, and a removed color some symbol drew with.
+    fn dangling_map() -> Result<Omap> {
+        let mut map = Omap::from_bytes(super::DEFAULT_ISOM_15000)?;
+        let (point, _) = map.symbols.iter_point_symbols().next().unwrap();
+        let _id = map
+            .parts
+            .at_mut(0)
+            .unwrap()
+            .objects
+            .push(PointObject::new(Some(point), Point::new(1.0, 2.0)));
+        let _removed = map.symbols.remove(point);
+        let color = map.colors.at(0).unwrap().id();
+        let _removed = map.colors.remove(color);
+        assert!(map.validate().is_err(), "the map dangles");
+        Ok(map)
+    }
+
+    #[test]
+    fn writing_a_dangling_map_writes_it_as_pruned() -> Result<()> {
+        let map = dangling_map()?;
+        let mut pruned = map.clone();
+        pruned.prune_dangling_references();
+
+        let mut written = Vec::new();
+        map.to_writer(&mut written)?;
+        let mut expected = Vec::new();
+        pruned.to_writer(&mut expected)?;
+
+        assert_eq!(written, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn writing_leaves_the_map_as_it_was() -> Result<()> {
+        let map = dangling_map()?;
+        let before = map.validate();
+
+        map.to_writer(&mut Vec::new())?;
+
+        assert_eq!(map.validate(), before, "the map still dangles");
+        assert!(
+            map.iter_all_objects()
+                .last()
+                .is_some_and(|object| object.symbol().is_some()),
+            "the object keeps its handle"
+        );
         Ok(())
     }
 }

@@ -768,7 +768,7 @@ pub enum SymbolColor {
 impl SymbolColor {
     /// Create a `SymbolColor` from a file color index.
     /// -1 or missing => `NoColor`, -900 => `RegistrationBlack`, >= 0 => Color lookup.
-    pub fn from_index(index: i32, color_set: &ColorSet) -> Self {
+    pub(crate) fn from_index(index: i32, color_set: &ColorSet) -> Self {
         match index {
             -900 => Self::RegistrationBlack,
             i if i >= 0 => match color_set.at(i as usize) {
@@ -781,7 +781,7 @@ impl SymbolColor {
 
     /// Get the priority index of this color in the color set.
     /// Returns -1 for `NoColor`, -900 for `RegistrationBlack`.
-    pub fn priority(&self, color_set: &ColorSet) -> i32 {
+    pub(crate) fn priority(&self, color_set: &ColorSet) -> i32 {
         match self {
             Self::Color(id) => color_set.position(*id).map_or(-1, |p| p as i32),
             Self::RegistrationBlack => -900,
