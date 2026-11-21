@@ -4,6 +4,7 @@ use crate::NonNegativeF64;
 use crate::objects::{HorizontalAlign, TextGeometry, TextObject, VerticalAlign, WrapBox};
 use crate::symbols::{SymbolSet, TextSymbolId};
 use crate::xml::attrs::try_get_attr_raw;
+use crate::xml::objects::boxed_tags;
 use crate::xml::units::{from_file_coords, to_file_coords};
 use crate::xml::{CoordinateComponent, Error, Result, Section};
 use geo_types::Coord;
@@ -199,7 +200,8 @@ impl TextObject {
                 _ => (),
             }
         }
-        let mut object = Self::new(symbol, text_geo, text).with_tags(tags);
+        let mut object = Self::new(symbol, text_geo, text);
+        object.tags = boxed_tags(tags);
         object.h_align = h_align;
         object.v_align = v_align;
         object.rotation = rotation;

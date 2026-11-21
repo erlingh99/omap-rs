@@ -87,7 +87,7 @@ pub struct TextObject {
         clippy::box_collection,
         reason = "the map header is 48 bytes inline and most objects carry no tags"
     )]
-    tags: Option<Box<HashMap<String, String>>>,
+    pub(crate) tags: Option<Box<HashMap<String, String>>>,
     /// Weak reference to the text symbol used to render this object.
     pub symbol: Option<TextSymbolId>,
     geometry: TextGeometry,
@@ -113,13 +113,6 @@ impl TextObject {
             v_align: VerticalAlign::default(),
             rotation: 0.0,
         }
-    }
-
-    /// This object with the tags a file gave it.
-    #[cfg(feature = "xml")]
-    pub(crate) fn with_tags(mut self, tags: HashMap<String, String>) -> Self {
-        self.tags = (!tags.is_empty()).then(|| Box::new(tags));
-        self
     }
 
     /// The tags associated with the object.

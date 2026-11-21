@@ -49,15 +49,6 @@ impl MapObject {
         }
     }
 
-    #[cfg(feature = "xml")]
-    pub(crate) fn geometry_is_empty(&self) -> bool {
-        match self {
-            Self::Line(object) => object.geometry_is_empty(),
-            Self::Area(object) => object.geometry_is_empty(),
-            Self::Point(_) | Self::Text(_) => false,
-        }
-    }
-
     /// Transform this object, preserving Bézier control points for line and
     /// area objects.
     pub fn transform<F>(&mut self, transform: F)

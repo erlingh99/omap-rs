@@ -36,7 +36,10 @@ pub(in crate::xml) fn parse_attr<T: FromStr>(attr: Attribute<'_>) -> Result<T> {
 }
 
 /// This escapes any xml-codes, use for user-strings
-pub(in crate::xml) fn try_get_attr<T: FromStr>(bytes: &BytesStart<'_>, attr: &str) -> Result<Option<T>> {
+pub(in crate::xml) fn try_get_attr<T: FromStr>(
+    bytes: &BytesStart<'_>,
+    attr: &str,
+) -> Result<Option<T>> {
     let a = bytes.try_get_attribute(attr)?.map(|a| parse_attr(a));
     a.transpose()
 }

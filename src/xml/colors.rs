@@ -296,8 +296,9 @@ fn read_color<R: std::io::BufRead>(
 
         Ok(ColorParseReturn::Spot {
             color: {
-                let mut color =
-                    SpotColor::new(name, spotcolor_name, cmyk).with_modes(cmyk_mode, rgb_mode);
+                let mut color = SpotColor::new(name, spotcolor_name, cmyk);
+                color.cmyk_mode = cmyk_mode;
+                color.rgb_mode = rgb_mode;
                 color.knockout = knockout;
                 color.screen_frequency = NonNegativeF64::clamped_from(spot_frequency);
                 color.screen_angle_deg = spot_angle;
@@ -318,7 +319,9 @@ fn read_color<R: std::io::BufRead>(
         }
         Ok(ColorParseReturn::Mix {
             color: {
-                let mut color = MixedColor::new(name, Vec::new()).with_modes(cmyk_mode, rgb_mode);
+                let mut color = MixedColor::new(name, Vec::new());
+                color.cmyk_mode = cmyk_mode;
+                color.rgb_mode = rgb_mode;
                 color.knockout = knockout;
                 color
             },

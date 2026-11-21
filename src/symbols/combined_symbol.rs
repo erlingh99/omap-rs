@@ -17,7 +17,7 @@ pub struct CombinedSymbol<Id, Private> {
     /// Public components are added through [`SymbolSet::add_area_component`]
     /// and [`SymbolSet::add_line_component`], which reject any component that
     /// would make the definition cyclic.
-    parts: Vec<PublicOrPrivateSymbol<Id, Private>>,
+    pub(crate) parts: Vec<PublicOrPrivateSymbol<Id, Private>>,
 }
 
 /// A combined area symbol: any path symbol public, an area or line private.
@@ -39,14 +39,6 @@ impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
         }
     }
 
-    #[cfg(feature = "xml")]
-    pub(crate) fn from_parts(
-        common: SymbolCommon,
-        parts: Vec<PublicOrPrivateSymbol<Id, Private>>,
-    ) -> Self {
-        Self { common, parts }
-    }
-
     /// Iterate through the symbol component of the symbol
     pub fn components(&self) -> impl Iterator<Item = &PublicOrPrivateSymbol<Id, Private>> {
         self.parts.iter()
@@ -65,15 +57,6 @@ impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
             PublicOrPrivateSymbol::Public(id) => *id,
             PublicOrPrivateSymbol::Private(_) => None,
         })
-    }
-
-    /// Point the public part at `position` at `id`. Does nothing if there is
-    /// no public part there.
-    #[cfg(feature = "xml")]
-    pub(crate) fn set_public(&mut self, position: usize, id: Id) {
-        if let Some(PublicOrPrivateSymbol::Public(part)) = self.parts.get_mut(position) {
-            *part = Some(id);
-        }
     }
 
     /// Remove and return the symbol component at position `index` in the component vec.

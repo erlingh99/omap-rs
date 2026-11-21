@@ -262,7 +262,7 @@ pub struct AreaObject {
         clippy::box_collection,
         reason = "the map header is 48 bytes inline and most objects carry no tags"
     )]
-    tags: Option<Box<HashMap<String, String>>>,
+    pub(crate) tags: Option<Box<HashMap<String, String>>>,
     /// The fill-pattern rotation and origin.
     pub pattern_rotation: PatternRotation,
     /// The area or combined-area symbol used to render this object.
@@ -279,13 +279,6 @@ impl AreaObject {
             symbol,
             geometry: geometry.into(),
         }
-    }
-
-    /// This object with the tags a file gave it.
-    #[cfg(feature = "xml")]
-    pub(crate) fn with_tags(mut self, tags: HashMap<String, String>) -> Self {
-        self.tags = (!tags.is_empty()).then(|| Box::new(tags));
-        self
     }
 
     /// The tags associated with the object.

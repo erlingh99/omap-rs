@@ -2,6 +2,7 @@
 
 use crate::objects::PointObject;
 use crate::symbols::{PointSymbolId, SymbolSet};
+use crate::xml::objects::boxed_tags;
 use crate::xml::units::{from_file_coords, to_file_coords};
 use crate::xml::{CoordinateComponent, Error, ObjectKind, Result, Section};
 use geo_types::{Coord, Point};
@@ -117,7 +118,8 @@ impl PointObject {
             }
         }
         let geometry = point.ok_or(Error::MissingObjectGeometry(ObjectKind::Point))?;
-        let mut object = Self::new(symbol, geometry).with_tags(tags);
+        let mut object = Self::new(symbol, geometry);
+        object.tags = boxed_tags(tags);
         object.rotation = rotation;
         Ok(object)
     }

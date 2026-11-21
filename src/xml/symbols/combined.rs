@@ -43,6 +43,21 @@ impl PrivatePart for LineSymbol {
 }
 
 impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
+    pub(in crate::xml) fn from_parts(
+        common: SymbolCommon,
+        parts: Vec<PublicOrPrivateSymbol<Id, Private>>,
+    ) -> Self {
+        Self { common, parts }
+    }
+
+    /// Point the public part at `position` at `id`. Does nothing if there is
+    /// no public part there.
+    pub(in crate::xml) fn set_public(&mut self, position: usize, id: Id) {
+        if let Some(PublicOrPrivateSymbol::Public(part)) = self.parts.get_mut(position) {
+            *part = Some(id);
+        }
+    }
+
     pub(in crate::xml) fn write_body<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,

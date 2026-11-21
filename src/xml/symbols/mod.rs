@@ -78,7 +78,10 @@ impl SymbolCommon {
     }
 
     /// Write the `<icon>` and close the `<symbol>`.
-    pub(in crate::xml) fn write_close<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+    pub(in crate::xml) fn write_close<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+    ) -> Result<()> {
         if let Some(icon) = &self.custom_icon {
             writer.write_event(Event::Empty(
                 BytesStart::new("icon").with_attributes([("src", icon.as_str())]),

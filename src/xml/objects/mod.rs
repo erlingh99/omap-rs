@@ -149,6 +149,17 @@ pub(in crate::xml) fn parse_file_coords(text: &str, coords: &mut Vec<FileCoord>)
     Ok(())
 }
 
+/// Tags as an object stores them: no allocation when there are none.
+#[expect(
+    clippy::box_collection,
+    reason = "the map header is 48 bytes inline and most objects carry no tags"
+)]
+pub(in crate::xml) fn boxed_tags(
+    tags: HashMap<String, String>,
+) -> Option<Box<HashMap<String, String>>> {
+    (!tags.is_empty()).then(|| Box::new(tags))
+}
+
 pub(in crate::xml) fn parse_tags<R: std::io::BufRead>(
     reader: &mut Reader<R>,
 ) -> Result<HashMap<String, String>> {

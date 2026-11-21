@@ -3,6 +3,7 @@
 use crate::objects::{AreaObject, BezierPolygon, PatternRotation};
 use crate::symbols::{AreaPathSymbolId, SymbolSet};
 use crate::xml::attrs::try_get_attr_raw;
+use crate::xml::objects::boxed_tags;
 use crate::xml::objects::{
     COORD_FLAGS_RING_END, FileCoord, bezier_from_file_coords, file_coords_from_bezier,
 };
@@ -25,7 +26,10 @@ impl AreaObject {
     }
 
     /// Write a full object element for use inside a point symbol.
-    pub(in crate::xml) fn write_as_element<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+    pub(in crate::xml) fn write_as_element<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+    ) -> Result<()> {
         self.write_content(writer, None)
     }
 
@@ -124,7 +128,8 @@ impl AreaObject {
 
         let geometry =
             bezier_polygon_from_file_coords(&file_coords).unwrap_or_else(BezierPolygon::empty);
-        let mut object = Self::new(symbol, geometry).with_tags(tags);
+        let mut object = Self::new(symbol, geometry);
+        object.tags = boxed_tags(tags);
         object.pattern_rotation = pattern_rotation;
         Ok(object)
     }

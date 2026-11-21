@@ -31,6 +31,14 @@ where
 }
 
 impl MapObject {
+    pub(in crate::xml) fn geometry_is_empty(&self) -> bool {
+        match self {
+            Self::Line(object) => object.geometry_is_empty(),
+            Self::Area(object) => object.geometry_is_empty(),
+            Self::Point(_) | Self::Text(_) => false,
+        }
+    }
+
     pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,

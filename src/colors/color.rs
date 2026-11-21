@@ -10,8 +10,8 @@ pub struct SpotColor {
     pub color_name: String,
     /// Whether this color knocks out colors beneath it.
     pub knockout: bool,
-    cmyk_mode: CmykMode, // not allowed to be FromSpotColors and both this and rgb_mode cannot point at eachother
-    rgb_mode: RgbMode,   // same as above
+    pub(crate) cmyk_mode: CmykMode, // not allowed to be FromSpotColors and both this and rgb_mode cannot point at eachother
+    pub(crate) rgb_mode: RgbMode,   // same as above
     /// The internal spot-color name used in printing.
     pub spotcolor_name: String,
     /// Screen ruling frequency (lines per inch).
@@ -38,15 +38,6 @@ impl SpotColor {
             screen_frequency: NonNegativeF64::default(),
             screen_angle_deg: 0.0,
         }
-    }
-
-    /// This color with the given modes, taken as they are: for a reader that
-    /// has already made them consistent.
-    #[cfg(feature = "xml")]
-    pub(crate) fn with_modes(mut self, cmyk_mode: CmykMode, rgb_mode: RgbMode) -> Self {
-        self.cmyk_mode = cmyk_mode;
-        self.rgb_mode = rgb_mode;
-        self
     }
 
     /// Get the effective CMYK value of this spot color.
@@ -156,8 +147,8 @@ pub struct MixedColor {
     pub color_name: String,
     /// Whether this color knocks out colors beneath it.
     pub knockout: bool,
-    cmyk_mode: CmykMode,
-    rgb_mode: RgbMode,
+    pub(crate) cmyk_mode: CmykMode,
+    pub(crate) rgb_mode: RgbMode,
     /// The spot-color components and their weights.
     pub components: Vec<ColorComponent>,
 }
@@ -174,15 +165,6 @@ impl MixedColor {
             rgb_mode: RgbMode::FromSpotColors,
             components,
         }
-    }
-
-    /// This color with the given modes, taken as they are: for a reader that
-    /// has already made them consistent.
-    #[cfg(feature = "xml")]
-    pub(crate) fn with_modes(mut self, cmyk_mode: CmykMode, rgb_mode: RgbMode) -> Self {
-        self.cmyk_mode = cmyk_mode;
-        self.rgb_mode = rgb_mode;
-        self
     }
 
     /// Get the effective CMYK value of this mixed color.

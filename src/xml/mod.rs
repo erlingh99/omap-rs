@@ -7,6 +7,7 @@
 
 mod attrs;
 mod colors;
+mod defaults;
 mod error;
 mod format_info;
 mod georef;

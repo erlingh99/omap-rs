@@ -3,6 +3,7 @@
 use crate::objects::{BezierPath, LineObject};
 use crate::symbols::{LinePathSymbolId, SymbolSet};
 use crate::xml::attrs::try_get_attr_raw;
+use crate::xml::objects::boxed_tags;
 use crate::xml::objects::{COORD_FLAGS_RING_END, bezier_from_file_coords, file_coords_from_bezier};
 use crate::xml::{Error, Result, Section};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
@@ -21,7 +22,10 @@ impl LineObject {
     }
 
     /// Write a full object element for use inside a point symbol.
-    pub(in crate::xml) fn write_as_element<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+    pub(in crate::xml) fn write_as_element<W: std::io::Write>(
+        &self,
+        writer: &mut Writer<W>,
+    ) -> Result<()> {
         self.write_content(writer, None)
     }
 
@@ -87,7 +91,9 @@ impl LineObject {
         }
 
         let geometry = bezier_from_file_coords(&file_coords).unwrap_or_else(BezierPath::empty);
-        Ok(Self::new(symbol, geometry).with_tags(tags))
+        let mut object = Self::new(symbol, geometry);
+        object.tags = boxed_tags(tags);
+        Ok(object)
     }
 }
 

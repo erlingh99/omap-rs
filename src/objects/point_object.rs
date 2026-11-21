@@ -19,7 +19,7 @@ pub struct PointObject {
         clippy::box_collection,
         reason = "the map header is 48 bytes inline and most objects carry no tags"
     )]
-    tags: Option<Box<HashMap<String, String>>>,
+    pub(crate) tags: Option<Box<HashMap<String, String>>>,
     /// Rotation of the symbol in radians.
     pub rotation: f64,
     /// The point symbol used to render this object, or `None` for the
@@ -42,13 +42,6 @@ impl PointObject {
     /// Create a point object for use as a point-symbol element.
     pub fn new_element(geometry: Point) -> Self {
         Self::new(None, geometry)
-    }
-
-    /// This object with the tags a file gave it.
-    #[cfg(feature = "xml")]
-    pub(crate) fn with_tags(mut self, tags: HashMap<String, String>) -> Self {
-        self.tags = (!tags.is_empty()).then(|| Box::new(tags));
-        self
     }
 
     /// The tags associated with the object.
