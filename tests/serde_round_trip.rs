@@ -117,10 +117,10 @@ fn reference_graph(map: &Omap) -> ReferenceGraph {
 #[test]
 fn the_reference_graph_survives_a_json_round_trip() -> Result<()> {
     for (name, bytes) in corpus() {
-        let map = Omap::from_bytes(bytes)?;
+        let map = omap::xml::read(bytes)?;
         // Sorting happens on write, so do it first to compare like with like.
         let mut sink = Vec::new();
-        map.to_writer(&mut sink)?;
+        omap::xml::write(&map, &mut sink)?;
         let before = reference_graph(&map);
 
         let json = serde_json::to_string(&map).expect("serialize");
@@ -144,7 +144,7 @@ fn the_reference_graph_survives_a_json_round_trip() -> Result<()> {
 /// same index.
 #[test]
 fn handles_resolve_to_the_same_symbols_after_a_round_trip() -> Result<()> {
-    let map = Omap::from_bytes(ISOM_15000)?;
+    let map = omap::xml::read(ISOM_15000)?;
     let json = serde_json::to_string(&map).expect("serialize");
     let restored: Omap = serde_json::from_str(&json).expect("deserialize");
 
@@ -170,7 +170,7 @@ fn handles_resolve_to_the_same_symbols_after_a_round_trip() -> Result<()> {
 /// stays removed.
 #[test]
 fn a_removal_survives_a_round_trip_without_pruning() -> Result<()> {
-    let mut map = Omap::from_bytes(ISOM_15000)?;
+    let mut map = omap::xml::read(ISOM_15000)?;
     let doomed = map.symbols.ids().nth(3).expect("a fourth symbol");
     let survivor = map.symbols.ids().nth(4).expect("a fifth symbol");
 

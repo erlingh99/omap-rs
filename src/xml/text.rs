@@ -1,11 +1,8 @@
 //! Element text content.
 
-use quick_xml::{
-    Reader, Writer, XmlVersion,
-    events::{BytesEnd, BytesStart, BytesText, Event},
-};
-
 use crate::Result;
+use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+use quick_xml::{Reader, Writer, XmlVersion};
 
 /// The text content of the element just started, up to its first child or end.
 pub(crate) fn read_text<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<String> {

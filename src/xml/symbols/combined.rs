@@ -5,7 +5,7 @@ use crate::symbols::{
     AreaOrLineSymbol, AreaSymbol, CombinedAreaSymbol, CombinedSymbol, LineSymbol, PathSymbolId,
     PublicOrPrivateSymbol, SymbolCommon, SymbolId, SymbolSet,
 };
-use crate::utils::{parse_attr, parse_attr_raw, try_get_attr_raw};
+use crate::xml::attrs::{parse_attr, parse_attr_raw, try_get_attr_raw};
 use crate::xml::symbols::{SymbolPosition, UnresolvedPart};
 use crate::{Error, OmapSection, Result};
 use quick_xml::events::{BytesEnd, BytesStart, Event};

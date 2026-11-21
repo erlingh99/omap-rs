@@ -11,7 +11,7 @@ use crate::symbols::{
     AreaOrLineSymbol, AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, LineSymbol, PointSymbol,
     PublicOrPrivateSymbol, Symbol, SymbolCommon, SymbolId, SymbolKind, SymbolSet, TextSymbol,
 };
-use crate::utils::{parse_attr, parse_attr_raw, try_get_attr, try_get_attr_raw};
+use crate::xml::attrs::{parse_attr, parse_attr_raw, try_get_attr, try_get_attr_raw};
 use crate::{Code, Error, OmapSection, Result};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};

@@ -7,7 +7,8 @@ mod point;
 mod text;
 
 use crate::objects::{BezierPath, BezierSegment, BezierString};
-use crate::utils::{from_file_coords, to_file_coords, try_get_attr};
+use crate::xml::attrs::try_get_attr;
+use crate::xml::units::{from_file_coords, to_file_coords};
 use crate::{CoordinateComponent, Error, OmapSection, Result};
 use geo_types::Coord;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};

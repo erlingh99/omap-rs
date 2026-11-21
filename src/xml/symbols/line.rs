@@ -5,7 +5,7 @@ use crate::symbols::{
     BorderDash, BorderStyle, CapStyle, DashStyle, DashSymbol, GroupDashes, JoinStyle, LineSymbol,
     LineSymbolBorder, MidSymbol, MidSymbolPlacement, PointSymbol, SymbolCommon, SymbolKind,
 };
-use crate::utils::{parse_attr, parse_attr_raw, try_get_attr_raw};
+use crate::xml::attrs::{parse_attr, parse_attr_raw, try_get_attr_raw};
 use crate::xml::symbols::SymbolPosition;
 use crate::{Error, NonNegativeF64, OmapSection, Result};
 use quick_xml::events::{BytesEnd, BytesStart, Event};

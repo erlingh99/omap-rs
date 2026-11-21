@@ -3,7 +3,7 @@
 use crate::objects::MapObject;
 use crate::parts::{MapPart, MapParts};
 use crate::symbols::SymbolSet;
-use crate::utils::try_get_attr;
+use crate::xml::attrs::try_get_attr;
 use crate::{Error, OmapSection, Result};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};

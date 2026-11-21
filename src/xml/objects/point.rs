@@ -2,7 +2,7 @@
 
 use crate::objects::PointObject;
 use crate::symbols::{PointSymbolId, SymbolSet};
-use crate::utils::{from_file_coords, to_file_coords};
+use crate::xml::units::{from_file_coords, to_file_coords};
 use crate::{CoordinateComponent, Error, ObjectKind, OmapSection, Result};
 use geo_types::{Coord, Point};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};

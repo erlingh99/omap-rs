@@ -4,7 +4,7 @@ use crate::colors::{ColorSet, SymbolColor};
 use crate::symbols::{
     AreaSymbol, ClippingOption, FillPattern, PointSymbol, SymbolCommon, SymbolKind,
 };
-use crate::utils::{parse_attr, try_get_attr_raw};
+use crate::xml::attrs::{parse_attr, try_get_attr_raw};
 use crate::xml::symbols::SymbolPosition;
 use crate::{Error, NonNegativeF64, OmapSection, Result};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
@@ -91,8 +91,9 @@ impl FillPattern {
                                             parse_attr(attr).unwrap_or(sub_common.name);
                                     }
                                     "code" => {
-                                        sub_common.code = crate::utils::parse_attr_raw(attr.value)
-                                            .unwrap_or_default();
+                                        sub_common.code =
+                                            crate::xml::attrs::parse_attr_raw(attr.value)
+                                                .unwrap_or_default();
                                     }
                                     _ => {}
                                 }

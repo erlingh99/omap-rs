@@ -2,7 +2,7 @@
 
 use crate::objects::{BezierPath, LineObject};
 use crate::symbols::{LinePathSymbolId, SymbolSet};
-use crate::utils::try_get_attr_raw;
+use crate::xml::attrs::try_get_attr_raw;
 use crate::xml::objects::{COORD_FLAGS_RING_END, bezier_from_file_coords, file_coords_from_bezier};
 use crate::{Error, OmapSection, Result};
 use quick_xml::events::{BytesEnd, BytesStart, Event};

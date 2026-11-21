@@ -13,7 +13,7 @@ const FROM_PATH: &[u8] = include_bytes!("../example_data/from_path.omap");
 const ISOM_15000: &[u8] = include_bytes!("../src/default_maps/isom_15000.omap");
 
 fn from_path() -> Omap {
-    Omap::from_bytes(FROM_PATH).expect("from_path.omap parses")
+    omap::xml::read(FROM_PATH).expect("from_path.omap parses")
 }
 
 fn first_part(map: &Omap) -> &MapPart {
@@ -93,7 +93,7 @@ fn editing_a_copy_leaves_the_original_unchanged_and_back() {
 
 #[test]
 fn replacing_a_color_in_a_copy_leaves_the_original_unchanged() -> Result<()> {
-    let original = Omap::from_bytes(ISOM_15000)?;
+    let original = omap::xml::read(ISOM_15000)?;
     let ids: Vec<_> = original.colors.ids().collect();
     let name = |map: &Omap, at: usize| map.colors.get(ids[at]).expect("resolves").name().to_owned();
     let first = name(&original, 0);
@@ -182,8 +182,8 @@ fn restoring_an_object_is_refused_for_a_foreign_handle() {
 /// The objects the map, written and read back, draws with the symbol coded like `code`.
 fn written_objects_with(map: &Omap, code: omap::Code) -> Result<usize> {
     let mut bytes = Vec::new();
-    map.to_writer(&mut bytes)?;
-    let read = Omap::from_bytes(&bytes)?;
+    omap::xml::write(map, &mut bytes)?;
+    let read = omap::xml::read(bytes.as_slice())?;
     Ok(read
         .iter_all_objects()
         .filter_map(MapObject::symbol)
@@ -429,7 +429,7 @@ fn combined_of_public_parts(map: &Omap) -> Option<(SymbolId, SymbolId, omap::col
 
 #[test]
 fn pruning_a_color_gone_from_a_public_part_leaves_the_combined_symbol_shared() {
-    let mut map = Omap::from_bytes(ISOM_15000).expect("bundled map parses");
+    let mut map = omap::xml::read(ISOM_15000).expect("bundled map parses");
     let (combined, part, color) =
         combined_of_public_parts(&map).expect("a combined symbol of public parts");
     let _removed = map.colors.remove(color).expect("resolves");
@@ -467,7 +467,7 @@ fn pruning_a_color_gone_from_a_public_part_leaves_the_combined_symbol_shared() {
 fn pruning_empties_a_removed_public_part_in_place() {
     use omap::symbols::{PublicOrPrivateSymbol, Symbol};
 
-    let mut map = Omap::from_bytes(ISOM_15000).expect("bundled map parses");
+    let mut map = omap::xml::read(ISOM_15000).expect("bundled map parses");
     let (combined, part, _) =
         combined_of_public_parts(&map).expect("a combined symbol of public parts");
     // Whether each part names a symbol, in order.
@@ -506,8 +506,8 @@ fn pruning_empties_a_removed_public_part_in_place() {
     ));
 
     let mut bytes = Vec::new();
-    map.to_writer(&mut bytes).expect("writes");
-    let reread = Omap::from_bytes(&bytes).expect("reads back");
+    omap::xml::write(&map, &mut bytes).expect("writes");
+    let reread = omap::xml::read(bytes.as_slice()).expect("reads back");
     let reread_combined = reread
         .symbols
         .at(map.symbols.position(combined).expect("resolves"))

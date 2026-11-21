@@ -1,6 +1,6 @@
 //! Test that read - write - read does not change the map
 
-use omap::{Omap, Result};
+use omap::Result;
 
 const ISOM_15000: &[u8] = include_bytes!("../src/default_maps/isom_15000.omap");
 const ISOM_10000: &[u8] = include_bytes!("../src/default_maps/isom_10000.omap");
@@ -17,9 +17,9 @@ fn corpus() -> [(&'static str, &'static [u8]); 4] {
 }
 
 fn round_trip(bytes: &[u8]) -> Result<Vec<u8>> {
-    let map = Omap::from_bytes(bytes)?;
+    let map = omap::xml::read(bytes)?;
     let mut out = Vec::new();
-    map.to_writer(&mut out)?;
+    omap::xml::write(&map, &mut out)?;
     Ok(out)
 }
 

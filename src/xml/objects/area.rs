@@ -2,10 +2,11 @@
 
 use crate::objects::{AreaObject, BezierPolygon, PatternRotation};
 use crate::symbols::{AreaPathSymbolId, SymbolSet};
-use crate::utils::{from_file_coords, to_file_coords, try_get_attr_raw};
+use crate::xml::attrs::try_get_attr_raw;
 use crate::xml::objects::{
     COORD_FLAGS_RING_END, FileCoord, bezier_from_file_coords, file_coords_from_bezier,
 };
+use crate::xml::units::{from_file_coords, to_file_coords};
 use crate::{Error, OmapSection, Result};
 use geo_types::Coord;
 use quick_xml::events::{BytesEnd, BytesStart, Event};

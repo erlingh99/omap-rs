@@ -6,7 +6,7 @@ use crate::objects::{
 use crate::symbols::{
     AreaPathSymbolId, LinePathSymbolId, PointSymbolId, SymbolId, SymbolSet, TextSymbolId,
 };
-use crate::utils::parse_attr_raw;
+use crate::xml::attrs::parse_attr_raw;
 use crate::{Error, Result};
 use quick_xml::events::BytesStart;
 use quick_xml::{Reader, Writer};

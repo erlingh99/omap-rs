@@ -2,7 +2,8 @@
 
 use crate::objects::{HorizontalAlign, TextGeometry, TextObject, VerticalAlign, WrapBox};
 use crate::symbols::{SymbolSet, TextSymbolId};
-use crate::utils::{from_file_coords, to_file_coords, try_get_attr_raw};
+use crate::xml::attrs::try_get_attr_raw;
+use crate::xml::units::{from_file_coords, to_file_coords};
 use crate::{CoordinateComponent, Error, NonNegativeF64, OmapSection, Result};
 use geo_types::Coord;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};

@@ -4,7 +4,7 @@ use crate::colors::{ColorSet, SymbolColor};
 use crate::symbols::{
     FramingMode, LineBelow, LineFraming, ShadowFraming, SymbolCommon, TextSymbol,
 };
-use crate::utils::{self, try_get_attr_raw};
+use crate::xml::attrs::try_get_attr_raw;
 use crate::{Error, NonNegativeF64, OmapSection, Result};
 use geo_types::Coord;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
@@ -88,8 +88,8 @@ impl TextSymbol {
                                 FramingMode::ShadowFraming(ShadowFraming {
                                     color: framing_color,
                                     shadow_offset: Coord {
-                                        x: utils::from_file_value(sx),
-                                        y: utils::from_file_value(sy),
+                                        x: crate::xml::units::from_file_value(sx),
+                                        y: crate::xml::units::from_file_value(sy),
                                     },
                                 })
                             }
@@ -176,7 +176,7 @@ impl TextSymbol {
         }
         writer.write_event(Event::Empty(font))?;
 
-        let ps_file = utils::to_file_value(self.paragraph_spacing)?;
+        let ps_file = crate::xml::units::to_file_value(self.paragraph_spacing)?;
         let mut text = BytesStart::new("text").with_attributes([
             ("color", self.color.priority(color_set).to_string().as_str()),
             ("line_spacing", self.line_spacing.get().to_string().as_str()),
@@ -210,7 +210,7 @@ impl TextSymbol {
                     ))?;
                 }
                 FramingMode::ShadowFraming(sf) => {
-                    let shadow = utils::to_file_coords(sf.shadow_offset)?;
+                    let shadow = crate::xml::units::to_file_coords(sf.shadow_offset)?;
                     writer.write_event(Event::Empty(
                         BytesStart::new("framing").with_attributes([
                             ("color", sf.color.priority(color_set).to_string().as_str()),

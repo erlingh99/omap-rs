@@ -5,8 +5,9 @@ use crate::templates::{
     Template, TemplateCommon, TemplateDefaults, TemplateEntry, TemplateTransform,
     TemplateTransformations, Templates, TrackTemplate,
 };
-use crate::utils::{from_file_coords, parse_attr_raw, to_file_coords, try_get_attr_raw};
 use crate::view::TemplateVisibility;
+use crate::xml::attrs::{parse_attr_raw, try_get_attr_raw};
+use crate::xml::units::{from_file_coords, to_file_coords};
 use crate::{Error, OmapSection, Result};
 use geo_types::Coord;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};

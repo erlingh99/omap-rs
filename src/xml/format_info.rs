@@ -1,14 +1,10 @@
 //! The XML declaration and the root `<map>` element's version.
 
-use std::str::FromStr;
-
-use quick_xml::{
-    Writer, XmlVersion,
-    events::{BytesDecl, BytesStart, Event},
-};
-
-use crate::utils::try_get_attr_raw;
+use crate::xml::attrs::try_get_attr_raw;
 use crate::{Error, Result};
+use quick_xml::events::{BytesDecl, BytesStart, Event};
+use quick_xml::{Writer, XmlVersion};
+use std::str::FromStr;
 
 /// The OMAP file format version.
 #[derive(Debug, Clone)]

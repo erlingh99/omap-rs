@@ -1,13 +1,8 @@
 use std::{convert::Infallible, str::FromStr};
 
 use geo_types::Coord;
-use quick_xml::{
-    XmlVersion,
-    events::{BytesStart, attributes::Attribute},
-};
 
 use crate::{Error, Result};
-const FILE_COORD_MAX: f64 = ((i32::MAX / 1000) - 1) as f64;
 
 /// A three-part version or symbol code of the form `A.B.C`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -71,41 +66,6 @@ impl std::fmt::Display for Code {
             write!(f, "{}", self.major)
         }
     }
-}
-
-/// Do not use this for fields with user text as it will not unescape xml-codes
-pub(crate) fn parse_attr_raw<T: FromStr>(value: std::borrow::Cow<'_, str>) -> Result<T> {
-    let e = match T::from_str(&value) {
-        Ok(it) => it,
-        Err(_err) => return Err(Error::FromStrError),
-    };
-    Ok(e)
-}
-
-/// Do not use this for fields with user text as it will not unescape xml-codes
-pub(crate) fn try_get_attr_raw<T: FromStr>(
-    bytes: &BytesStart<'_>,
-    attr: &str,
-) -> Result<Option<T>> {
-    let a = bytes
-        .try_get_attribute(attr)?
-        .map(|a| parse_attr_raw(a.value));
-    a.transpose()
-}
-
-/// This escapes any xml-codes, use for user-strings
-pub(crate) fn parse_attr<T: FromStr>(attr: Attribute<'_>) -> Result<T> {
-    let e = match T::from_str(&attr.normalized_value(XmlVersion::Explicit1_0)?) {
-        Ok(it) => it,
-        Err(_err) => return Err(Error::FromStrError),
-    };
-    Ok(e)
-}
-
-/// This escapes any xml-codes, use for user-strings
-pub(crate) fn try_get_attr<T: FromStr>(bytes: &BytesStart<'_>, attr: &str) -> Result<Option<T>> {
-    let a = bytes.try_get_attribute(attr)?.map(|a| parse_attr(a));
-    a.transpose()
 }
 
 /// A f64, but only allowed to be in the unit interval 0.0..=1.0
@@ -217,16 +177,6 @@ impl NonNegativeF64 {
     pub fn zero() -> Self {
         Self(0.)
     }
-
-    /// The files uses 1/1000 mm as the unit
-    pub(crate) fn to_file_value(self) -> Result<u32> {
-        Ok(to_file_value(self.0)?.try_into()?)
-    }
-
-    /// Create from file value (1/1000 mm integer) to mm
-    pub(crate) fn from_file_value(value: u32) -> Self {
-        Self(from_file_value(value as i32))
-    }
 }
 
 /// Tries to create a `NonNegativeF64` from a f64, but succeeds only for non-negative values
@@ -239,31 +189,6 @@ impl TryFrom<f64> for NonNegativeF64 {
         } else {
             Err(Error::NotNonNegativeF64)
         }
-    }
-}
-
-pub(crate) fn to_file_coords(map_coord: Coord) -> Result<Coord<i32>> {
-    Ok(Coord {
-        x: to_file_value(map_coord.x)?,
-        y: -to_file_value(map_coord.y)?,
-    })
-}
-
-pub(crate) fn to_file_value(value: f64) -> Result<i32> {
-    if !value.is_finite() || value.abs() > FILE_COORD_MAX {
-        return Err(Error::MapCoordOutOfBounds);
-    }
-    Ok((value * 1000.).round() as i32)
-}
-
-pub(crate) fn from_file_value(value: i32) -> f64 {
-    value as f64 / 1000.
-}
-
-pub(crate) fn from_file_coords(file_coord: Coord<i32>) -> Coord {
-    Coord {
-        x: from_file_value(file_coord.x),
-        y: -from_file_value(file_coord.y),
     }
 }
 

@@ -14,7 +14,7 @@ fn erosion_gully() -> Code {
 }
 
 fn isom() -> Result<Omap> {
-    Omap::from_bytes(include_bytes!("../src/default_maps/isom_15000.omap"))
+    omap::xml::read(include_bytes!("../src/default_maps/isom_15000.omap").as_slice())
 }
 
 #[test]

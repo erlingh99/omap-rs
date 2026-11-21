@@ -1,8 +1,9 @@
 //! The `<view>` section: zoom, grid and template visibility.
 
 use crate::templates::Templates;
-use crate::utils::{self, UnitF64, parse_attr_raw, try_get_attr_raw};
+use crate::utils::UnitF64;
 use crate::view::{Grid, GridAlignment, GridDisplay, GridUnit, TemplateVisibility, View};
+use crate::xml::attrs::{parse_attr_raw, try_get_attr_raw};
 use crate::{Error, NonNegativeF64, Result};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
@@ -224,13 +225,13 @@ impl View {
             .ok()
             .flatten()
             .unwrap_or(0.0);
-        self.view_centre.x = utils::from_file_value(
+        self.view_centre.x = crate::xml::units::from_file_value(
             try_get_attr_raw(bs, "position_x")
                 .ok()
                 .flatten()
                 .unwrap_or(0),
         );
-        self.view_centre.y = utils::from_file_value(
+        self.view_centre.y = crate::xml::units::from_file_value(
             try_get_attr_raw(bs, "position_y")
                 .ok()
                 .flatten()
@@ -297,8 +298,8 @@ impl View {
 
         self.grid.write(writer)?;
 
-        let position_x = utils::to_file_value(self.view_centre.x)?;
-        let position_y = utils::to_file_value(self.view_centre.y)?;
+        let position_x = crate::xml::units::to_file_value(self.view_centre.x)?;
+        let position_y = crate::xml::units::to_file_value(self.view_centre.y)?;
         let mut mv = BytesStart::new("map_view").with_attributes([
             ("zoom", format!("{:.4}", self.zoom.get()).as_str()),
             ("position_x", position_x.to_string().as_str()),

@@ -1,17 +1,15 @@
 //! The `<colors>` section: the color set in priority order.
 
-use quick_xml::{
-    Reader, Writer,
-    events::{BytesEnd, BytesStart, BytesText, Event},
-};
-
 use super::read_text;
 use crate::colors::{
     Cmyk, CmykMode, Color, ColorComponent, ColorSet, MixedColor, Rgb, RgbMode, SpotColor,
     SymbolColor,
 };
-use crate::utils::{UnitF64, parse_attr, parse_attr_raw, try_get_attr_raw};
+use crate::utils::UnitF64;
+use crate::xml::attrs::{parse_attr, parse_attr_raw, try_get_attr_raw};
 use crate::{Error, NonNegativeF64, OmapSection, Result};
+use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+use quick_xml::{Reader, Writer};
 
 pub(crate) fn read_color_set<R: std::io::BufRead>(
     reader: &mut Reader<R>,

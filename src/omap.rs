@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Cursor, Read, Write};
+use std::io::{BufReader, BufWriter};
 use std::num::NonZeroU32;
 use std::path::Path;
 
@@ -9,21 +9,16 @@ use crate::references::{Live, Reference, References as _};
 
 use geo_types::Coord;
 
-use quick_xml::{
-    Reader, Writer,
-    events::{BytesEnd, Event},
-};
-
 use crate::{
     colors::ColorSet,
+    format,
     geo_referencing::{GeoRef, MapTransform},
     objects::MapObject,
     parts::MapParts,
     symbols::SymbolSet,
     templates::Templates,
     view::View,
-    xml::format_info::{OmapVersion, XmlDeclaration},
-    {Error, Result, ValidationError},
+    {Result, ValidationError},
 };
 
 const DEFAULT_ISOM_15000: &[u8] = include_bytes!("default_maps/isom_15000.omap");
@@ -84,7 +79,7 @@ impl Omap {
         meters_above_sea: f64,
     ) -> Result<Self> {
         let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, SCALE_15_000)?;
-        let mut omap = Self::from_bytes(DEFAULT_ISOM_15000)?;
+        let mut omap = crate::xml::read(DEFAULT_ISOM_15000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
     }
@@ -102,7 +97,7 @@ impl Omap {
         meters_above_sea: f64,
     ) -> Result<Self> {
         let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, SCALE_10_000)?;
-        let mut omap = Self::from_bytes(DEFAULT_ISOM_10000)?;
+        let mut omap = crate::xml::read(DEFAULT_ISOM_10000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
     }
@@ -120,7 +115,7 @@ impl Omap {
         meters_above_sea: f64,
     ) -> Result<Self> {
         let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, SCALE_4_000)?;
-        let mut omap = Self::from_bytes(DEFAULT_ISSPROM_4000)?;
+        let mut omap = crate::xml::read(DEFAULT_ISSPROM_4000)?;
         omap.geo_referencing = geo_ref;
         Ok(omap)
     }
@@ -131,7 +126,7 @@ impl Omap {
     ///
     /// Returns an error if the embedded default map cannot be parsed.
     pub fn default_15_000() -> Result<Self> {
-        Self::from_bytes(DEFAULT_ISOM_15000)
+        crate::xml::read(DEFAULT_ISOM_15000)
     }
 
     /// Create a new `1:10_000` map with a complete ISOM symbolset and color order
@@ -140,7 +135,7 @@ impl Omap {
     ///
     /// Returns an error if the embedded default map cannot be parsed.
     pub fn default_10_000() -> Result<Self> {
-        Self::from_bytes(DEFAULT_ISOM_10000)
+        crate::xml::read(DEFAULT_ISOM_10000)
     }
 
     /// Create a new `1:4_000` map with a complete `ISSprOM` symbolset and color order
@@ -149,7 +144,7 @@ impl Omap {
     ///
     /// Returns an error if the embedded default map cannot be parsed.
     pub fn default_4_000() -> Result<Self> {
-        Self::from_bytes(DEFAULT_ISSPROM_4000)
+        crate::xml::read(DEFAULT_ISSPROM_4000)
     }
 
     /// Create a new empty map
@@ -166,190 +161,23 @@ impl Omap {
         }
     }
 
-    /// Construct an [`Omap`] from a byte sequence
+    /// Read a map from a file.
     ///
-    /// See [`Self::from_reader`] for more docs
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if a required map section cannot be parsed.
-    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self> {
-        Self::from_reader(Cursor::new(bytes))
-    }
-
-    /// Construct an [`Omap`] from anything that implements [`Read`]
-    ///
-    /// Parsing is intentionally permissive for some sections.
-    /// This function falls back to sensible defaults
-    /// for `notes`, `templates`, or `view`
-    /// if those sections cannot be parsed
-    ///
-    /// `barrier`s, `undo` and `redo` sections of the file are ignored
-    ///
-    /// The core sections `georeferencing`, `colors`, `symbols`, and `parts`
-    /// must still parse successfully or else loading fails.
+    /// The format is chosen by the file's extension; see [`crate::format`].
     ///
     /// # Errors
     ///
-    /// Returns an error if a required map section cannot be parsed.
-    pub fn from_reader<R: Read>(reader: R) -> Result<Self> {
-        let mut reader = Reader::from_reader(BufReader::new(reader));
-        reader.config_mut().expand_empty_elements = true;
-
-        let mut georef = None;
-        let mut colors = None;
-        let mut symbols = None;
-        let mut parts = None;
-
-        let mut notes = String::new();
-        let mut templates = Templates::default();
-        let mut view = View::default();
-
-        let mut xml_buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut xml_buf)? {
-                Event::Decl(dec) => XmlDeclaration::parse(dec)?,
-                Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
-                    "map" => OmapVersion::parse(&bytes_start)?,
-                    "notes" => notes = crate::xml::read_text(&mut reader).unwrap_or_default(),
-                    "georeferencing" => georef = Some(GeoRef::parse(&mut reader, &bytes_start)?),
-                    "colors" => {
-                        colors = Some(crate::xml::colors::read_color_set(
-                            &mut reader,
-                            &bytes_start,
-                        )?);
-                    }
-                    "symbols" => {
-                        if let Some(colors) = &colors {
-                            symbols = Some(SymbolSet::parse(&mut reader, &bytes_start, colors)?);
-                        } else {
-                            return Err(Error::SectionOutOfOrder {
-                                section: crate::OmapSection::Symbols,
-                                required_before: crate::OmapSection::Colors,
-                            });
-                        }
-                    }
-                    "parts" => {
-                        if let Some((symbols, _)) = &symbols {
-                            parts = Some(MapParts::parse(&mut reader, symbols)?);
-                        } else {
-                            return Err(Error::SectionOutOfOrder {
-                                section: crate::OmapSection::Parts,
-                                required_before: crate::OmapSection::Symbols,
-                            });
-                        }
-                    }
-                    "templates" => {
-                        templates = Templates::parse(&mut reader, &bytes_start).unwrap_or_default();
-                    }
-                    "view" => {
-                        view = View::parse(&mut reader, &bytes_start, &mut templates)
-                            .unwrap_or_default();
-                    }
-                    _ => (),
-                },
-                Event::End(bytes_end) => {
-                    if bytes_end.local_name().as_ref() == "map" {
-                        break;
-                    }
-                }
-                Event::Eof => break,
-                _ => (),
-            }
-        }
-
-        let (symbols, symbol_set_name) =
-            symbols.ok_or(Error::MissingRequiredSection(crate::OmapSection::Symbols))?;
-        Ok(Self {
-            notes,
-            geo_referencing: georef.ok_or(Error::MissingRequiredSection(
-                crate::OmapSection::Georeferencing,
-            ))?,
-            colors: colors.ok_or(Error::MissingRequiredSection(crate::OmapSection::Colors))?,
-            symbols,
-            symbol_set_name,
-            parts: parts.ok_or(Error::MissingRequiredSection(crate::OmapSection::Parts))?,
-            templates,
-            view,
-        })
-    }
-
-    /// Create an [`Omap`] from a path to an `.omap` file.
-    ///
-    /// See [`Self::from_reader`] for more docs
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the file cannot be opened or a required map section
-    /// cannot be parsed.
-    pub fn from_path(path: impl AsRef<Path>) -> Result<Self> {
+    /// Returns an error if no format claims the file's extension, the file
+    /// cannot be opened, or it is not a valid file of its format.
+    pub fn from_path(path: impl AsRef<Path>) -> std::result::Result<Self, format::Error> {
+        let path = path.as_ref();
+        let format = format_for(path)?;
         let file = File::open(path)?;
-        Self::from_reader(BufReader::new(file))
+        format.read(&mut BufReader::new(file))
     }
 
-    /// Write the map to anything that implements [`Write`]
-    ///
-    /// The format cannot hold a reference to a removed color or symbol, so
-    /// the map is written as [`Omap::prune_dangling_references`] would leave
-    /// it. The map itself is not changed, and is only copied if something
-    /// dangles. Call [`Omap::validate`] first to catch such references.
-    ///
-    /// Symbols are written in the order the symbol set holds them. Call
-    /// [`crate::symbols::SymbolSet::sort`] first to write them by
-    /// [`crate::Code`].
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any of the map data cannot be serialized.
-    pub fn to_writer<W: Write>(&self, writer: &mut W) -> Result<()> {
-        if self.validate().is_ok() {
-            return self.write_pruned(writer);
-        }
-        let mut pruned = self.clone();
-        pruned.prune_dangling_references();
-        pruned.write_pruned(writer)
-    }
-
-    /// Write a map that holds no dangling reference.
-    fn write_pruned<W: Write>(&self, writer: &mut W) -> Result<()> {
-        let mut writer = Writer::new(writer);
-
-        XmlDeclaration::write(&mut writer)?;
-        writer.get_mut().write_all(b"\n".as_slice())?;
-        OmapVersion::write(&mut writer)?;
-        writer.get_mut().write_all(b"\n".as_slice())?;
-
-        crate::xml::write_notes(self.notes.as_str(), &mut writer)?;
-        writer.get_mut().write_all(b"\n".as_slice())?;
-
-        self.geo_referencing.write(&mut writer)?;
-        writer.get_mut().write_all(b"\n".as_slice())?;
-
-        // write colors
-        crate::xml::colors::write_color_set(&self.colors, &mut writer)?;
-        writer.get_mut().write_all(b"\n".as_slice())?;
-        // write symbols
-        self.symbols
-            .write(&mut writer, &self.colors, &self.symbol_set_name)?;
-        writer.get_mut().write_all(b"\n".as_slice())?;
-        // write objects
-        self.parts.write(&mut writer, &self.symbols)?;
-        writer.get_mut().write_all(b"\n".as_slice())?;
-        // write templates
-        let vis = self.templates.write(&mut writer)?;
-        writer.get_mut().write_all(b"\n".as_slice())?;
-        // write view
-        self.view.write(&mut writer, vis)?;
-        writer.get_mut().write_all(b"\n".as_slice())?;
-        // write eof
-        writer.write_event(Event::End(BytesEnd::new("map")))?;
-        writer.get_mut().flush()?;
-        Ok(())
-    }
-
-    /// Write the map to an `.omap` file at the given path.
-    ///
-    /// See [`Self::to_writer`] for more docs
+    /// Write the map to a file, in the format its extension names; see
+    /// [`crate::format`].
     ///
     /// The replacement is atomic on platforms where [`std::fs::rename`] atomically
     /// replaces an existing destination. The temporary file is created beside
@@ -357,10 +185,12 @@ impl Omap {
     ///
     /// # Errors
     ///
-    /// Returns an error if the temporary file cannot be created, map data
-    /// cannot be serialized, or the temporary file cannot replace `path`.
-    pub fn to_file(&self, path: impl AsRef<Path>) -> Result<()> {
+    /// Returns an error if no format claims the file's extension, the
+    /// temporary file cannot be created, the map cannot be written in that
+    /// format, or the temporary file cannot replace `path`.
+    pub fn to_file(&self, path: impl AsRef<Path>) -> std::result::Result<(), format::Error> {
         let path = path.as_ref();
+        let format = format_for(path)?;
 
         let parent = path
             .parent()
@@ -380,7 +210,7 @@ impl Omap {
 
         let write_result = {
             let mut writer = BufWriter::new(temporary_file);
-            self.to_writer(&mut writer)
+            format.write(self, &mut writer)
         };
         if let Err(error) = write_result {
             std::fs::remove_file(temporary_path)?;
@@ -542,6 +372,17 @@ impl Omap {
     }
 }
 
+/// The format that claims `path`'s extension.
+fn format_for(path: &Path) -> std::result::Result<&'static dyn format::Format, format::Error> {
+    format::for_path(path).ok_or_else(|| {
+        format::Error::UnsupportedExtension(
+            path.extension()
+                .map(|extension| extension.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs, num::NonZeroU32};
@@ -637,7 +478,10 @@ mod tests {
             .push(PointObject::new(None, Point::new(3_000_000.0, 0.0)));
 
         let result = map.to_file(&path);
-        assert!(matches!(result, Err(Error::MapCoordOutOfBounds)));
+        assert!(matches!(
+            result,
+            Err(crate::format::Error::Xml(Error::MapCoordOutOfBounds))
+        ));
         assert_eq!(fs::read(&path)?, b"previous map");
         fs::remove_file(path)?;
         Ok(())
@@ -647,7 +491,7 @@ mod tests {
     /// takes the removed symbol's place.
     #[test]
     fn pruning_drops_references_to_removed_symbols() -> Result<()> {
-        let mut map = Omap::from_bytes(super::DEFAULT_ISOM_15000)?;
+        let mut map = crate::xml::read(super::DEFAULT_ISOM_15000)?;
         let point = map
             .symbols
             .iter_point_symbols()
@@ -683,7 +527,7 @@ mod tests {
     /// A map whose objects, symbols and colors dangle: a point object drawn
     /// with a removed symbol, and a removed color some symbol drew with.
     fn dangling_map() -> Result<Omap> {
-        let mut map = Omap::from_bytes(super::DEFAULT_ISOM_15000)?;
+        let mut map = crate::xml::read(super::DEFAULT_ISOM_15000)?;
         let (point, _) = map
             .symbols
             .iter_point_symbols()
@@ -713,9 +557,9 @@ mod tests {
         pruned.prune_dangling_references();
 
         let mut written = Vec::new();
-        map.to_writer(&mut written)?;
+        crate::xml::write(&map, &mut written)?;
         let mut expected = Vec::new();
-        pruned.to_writer(&mut expected)?;
+        crate::xml::write(&pruned, &mut expected)?;
 
         assert_eq!(written, expected);
         Ok(())
@@ -726,7 +570,7 @@ mod tests {
         let map = dangling_map()?;
         let before = map.validate();
 
-        map.to_writer(&mut Vec::new())?;
+        crate::xml::write(&map, &mut Vec::new())?;
 
         assert_eq!(map.validate(), before, "the map still dangles");
         assert!(

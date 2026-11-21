@@ -3,7 +3,7 @@
 use crate::colors::{ColorSet, SymbolColor};
 use crate::objects::{AreaObject, LineObject, PointObject};
 use crate::symbols::{AreaSymbol, Element, LineSymbol, PointSymbol, SymbolCommon, SymbolKind};
-use crate::utils::try_get_attr_raw;
+use crate::xml::attrs::try_get_attr_raw;
 use crate::xml::symbols::SymbolPosition;
 use crate::{Error, NonNegativeF64, OmapSection, Result};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
