@@ -3,11 +3,6 @@
 //! something referred to it, a prune makes it pass, and a second prune
 //! changes nothing.
 
-#![expect(
-    clippy::expect_used,
-    reason = "a test should fail loudly at the point it breaks"
-)]
-
 use std::sync::Arc;
 
 use omap::{

@@ -13,14 +13,13 @@ impl CombinedLineSymbol {
         let mut min = f64::MAX;
         for part in self.components() {
             let length = match part {
-                PublicOrPrivateSymbol::Public(Some(id)) => match symbol_set
-                    .get(SymbolId::from(*id))
-                    .map(|symbol| symbol.symbol())
-                {
-                    Some(Symbol::Line(symbol)) => symbol.minimum_length.get(),
-                    Some(Symbol::CombinedLine(symbol)) => symbol.minimum_length(symbol_set),
-                    _ => 0.,
-                },
+                PublicOrPrivateSymbol::Public(Some(id)) => {
+                    match symbol_set.get(SymbolId::from(*id)).map(crate::Entry::value) {
+                        Some(Symbol::Line(symbol)) => symbol.minimum_length.get(),
+                        Some(Symbol::CombinedLine(symbol)) => symbol.minimum_length(symbol_set),
+                        _ => 0.,
+                    }
+                }
                 PublicOrPrivateSymbol::Public(None) => 0.,
                 PublicOrPrivateSymbol::Private(symbol) => symbol.minimum_length.get(),
             };

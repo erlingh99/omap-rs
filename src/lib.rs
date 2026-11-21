@@ -3,7 +3,8 @@
 //! All map coordinates are given in millimetres on paper, relative to the
 //! reference point, with the positive y-axis pointing towards magnetic north.
 
-mod arena;
+/// The ordered, copy-on-write collection every set in a map is.
+pub mod collection;
 /// Color definitions: color set, spot colors, mixed colors, CMYK, RGB.
 pub mod colors;
 mod format_info;
@@ -27,6 +28,7 @@ pub mod view;
 
 use std::{fmt::Debug, io::BufWriter};
 
+pub use collection::{Collection, Entry, Removed};
 /// Re-export `geo_types` for convenience for downstream users
 pub use geo_types;
 pub use omap::Omap;
@@ -164,6 +166,14 @@ pub enum Error {
     /// An XML escape-sequence error.
     #[error(transparent)]
     EscapeError(#[from] quick_xml::escape::EscapeError),
+    /// A position is past the end of a collection.
+    #[error("position {position} is out of range for a collection of {len}")]
+    PositionOutOfRange {
+        /// The position asked for.
+        position: usize,
+        /// The number of items in the collection.
+        len: usize,
+    },
     /// Map parts could not be merged (indices out of range or identical).
     #[error("Could not merge map parts. Check that the indices are different and in range")]
     MapPartMergeError,

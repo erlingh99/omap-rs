@@ -172,7 +172,7 @@ impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
             if component == other {
                 return true;
             }
-            match symbol_set.get(component).map(|symbol| symbol.symbol()) {
+            match symbol_set.get(component).map(crate::Entry::value) {
                 Some(Symbol::CombinedArea(symbol)) => symbol.contains_symbol(symbol_set, other),
                 Some(Symbol::CombinedLine(symbol)) => symbol.contains_symbol(symbol_set, other),
                 _ => false,

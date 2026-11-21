@@ -2,11 +2,6 @@
 //! original until one side changes them, and a removed item can be restored
 //! under its own handle.
 
-#![expect(
-    clippy::expect_used,
-    reason = "a test should fail loudly at the point it breaks"
-)]
-
 use std::sync::Arc;
 
 use omap::objects::{MapObject, ObjectId};
@@ -22,15 +17,15 @@ fn from_path() -> Omap {
 }
 
 fn first_part(map: &Omap) -> &MapPart {
-    map.parts.get(0).expect("the map has a part")
+    map.parts.at(0).expect("the map has a part").value()
 }
 
 fn first_part_mut(map: &mut Omap) -> &mut MapPart {
-    map.parts.get_mut(0).expect("the map has a part")
+    map.parts.at_mut(0).expect("the map has a part")
 }
 
 fn object_ids(map: &Omap) -> Vec<ObjectId> {
-    first_part(map).objects().map(|(id, _)| id).collect()
+    first_part(map).objects.ids().collect()
 }
 
 fn mark(object: &mut MapObject, value: &str) {
@@ -41,8 +36,10 @@ fn mark(object: &mut MapObject, value: &str) {
 
 fn marked(map: &Omap, id: ObjectId) -> Option<&str> {
     first_part(map)
-        .object(id)
+        .objects
+        .get(id)
         .expect("the object is in the part")
+        .value()
         .tags()
         .get("edited")
         .map(String::as_str)
@@ -64,7 +61,8 @@ fn editing_a_copy_leaves_the_original_unchanged_and_back() {
     let mut copy = original.clone();
     mark(
         first_part_mut(&mut copy)
-            .object_mut(ids[0])
+            .objects
+            .get_mut(ids[0])
             .expect("resolves"),
         "copy",
     );
@@ -83,7 +81,8 @@ fn editing_a_copy_leaves_the_original_unchanged_and_back() {
 
     mark(
         first_part_mut(&mut original)
-            .object_mut(ids[1])
+            .objects
+            .get_mut(ids[1])
             .expect("resolves"),
         "original",
     );
@@ -116,15 +115,16 @@ fn an_edit_copies_only_the_object_it_touches() {
 
     mark(
         first_part_mut(&mut copy)
-            .object_mut(ids[3])
+            .objects
+            .get_mut(ids[3])
             .expect("resolves"),
         "copy",
     );
 
     for &id in &ids {
         let shared = Arc::ptr_eq(
-            first_part(&original).object_arc(id).expect("resolves"),
-            first_part(&copy).object_arc(id).expect("resolves"),
+            first_part(&original).objects.get_arc(id).expect("resolves"),
+            first_part(&copy).objects.get_arc(id).expect("resolves"),
         );
         assert_eq!(shared, id != ids[3], "only the edited object is copied");
     }
@@ -136,50 +136,47 @@ fn an_object_removed_from_a_copy_stays_in_the_original() {
     let ids = object_ids(&original);
     let mut copy = original.clone();
 
-    let removed = first_part_mut(&mut copy).remove_object(ids[2]);
+    let removed = first_part_mut(&mut copy).objects.remove(ids[2]);
 
     assert!(removed.is_some());
-    assert!(!first_part(&copy).contains(ids[2]));
-    assert!(first_part(&original).contains(ids[2]));
-    assert_eq!(first_part(&original).index_of(ids[2]), Some(2));
-    assert_eq!(first_part(&copy).len() + 1, first_part(&original).len());
+    assert!(!first_part(&copy).objects.contains(ids[2]));
+    assert!(first_part(&original).objects.contains(ids[2]));
+    assert_eq!(first_part(&original).objects.position(ids[2]), Some(2));
+    assert_eq!(
+        first_part(&copy).objects.len() + 1,
+        first_part(&original).objects.len()
+    );
 }
 
 #[test]
-fn a_restored_object_comes_back_under_its_own_handle() {
+fn a_restored_object_comes_back_under_its_own_handle_and_place() {
     let mut map = from_path();
     let ids = object_ids(&map);
-    let part = first_part_mut(&mut map);
+    let objects = &mut first_part_mut(&mut map).objects;
 
-    let (id, index, removed) = part.remove_object(ids[2]).expect("resolves");
-    assert_eq!((id, index), (ids[2], 2));
-    assert_eq!(part.index_of(ids[3]), Some(2));
+    let removed = objects.remove(ids[2]).expect("resolves");
+    assert_eq!((removed.id(), removed.position()), (ids[2], 2));
+    assert_eq!(objects.position(ids[3]), Some(2));
 
-    part.restore_object(ids[2], 0, removed)
-        .expect("the handle is a tombstone");
+    objects.restore(removed).expect("the handle is a tombstone");
 
-    assert_eq!(part.index_of(ids[2]), Some(0));
-    assert_eq!(part.index_of(ids[3]), Some(3));
-    assert_eq!(part.objects().next().map(|(id, _)| id), Some(ids[2]));
+    assert_eq!(objects.position(ids[2]), Some(2));
+    assert_eq!(objects.position(ids[3]), Some(3));
+    assert_eq!(objects.ids().collect::<Vec<_>>(), ids);
 }
 
 #[test]
-fn restoring_an_object_is_refused_for_a_live_or_foreign_handle() {
-    let mut map = from_path();
-    let ids = object_ids(&map);
-    let part = first_part_mut(&mut map);
-    let object = Arc::clone(part.object_arc(ids[0]).expect("resolves"));
+fn restoring_an_object_is_refused_for_a_foreign_handle() {
+    let map = from_path();
+    let mut other = first_part(&map).clone();
+    let removed = other.objects.remove_at(0).expect("an object");
 
-    assert!(part.restore_object(ids[0], 0, Arc::clone(&object)).is_err());
-
-    let mut other = MapPart::new("other");
-    let foreign = other.add_object(Arc::unwrap_or_clone(Arc::clone(&object)));
     let mut small = MapPart::new("small");
     assert!(
-        small.restore_object(foreign, 0, object).is_err(),
+        small.objects.restore(removed).is_err(),
         "a handle this part never issued"
     );
-    assert!(small.is_empty());
+    assert!(small.objects.is_empty());
 }
 
 /// The objects the map, written and read back, draws with the symbol coded like `code`.
@@ -203,16 +200,16 @@ fn objects_of_a_restored_symbol_use_it_again() -> Result<()> {
         .find_map(MapObject::symbol)
         .expect("an object has a symbol");
     let code = map.symbols.get(symbol).expect("resolves").common().code;
-    let index = map.symbols.index_of(symbol).expect("resolves");
+    let index = map.symbols.position(symbol).expect("resolves");
     let before = written_objects_with(&map, code)?;
     assert!(before > 0);
 
-    let (id, removed_index, removed) = map.symbols.remove(symbol).expect("resolves");
-    assert_eq!((id, removed_index), (symbol, index));
+    let removed = map.symbols.remove(symbol).expect("resolves");
+    assert_eq!((removed.id(), removed.position()), (symbol, index));
     assert_eq!(written_objects_with(&map, code)?, 0);
 
     map.symbols
-        .restore(id, removed_index, removed)
+        .restore(removed)
         .expect("the handle is a tombstone");
 
     assert!(map.symbols.get(symbol).is_some());
@@ -227,21 +224,23 @@ fn a_part_handle_follows_its_part_through_removals_and_restores() {
     let b = parts.push(MapPart::new("b"));
     let c = parts.push(MapPart::new("c"));
 
-    let (_, index, removed) = parts.remove(a).expect("resolves");
-    assert_eq!(index, 0);
-    assert_eq!(parts.index_of(b), Some(0));
-    assert_eq!(parts.get_by_id(c).map(|part| part.name.as_str()), Some("c"));
-    assert!(parts.get_by_id(a).is_none());
+    let removed = parts.remove(a).expect("resolves");
+    assert_eq!(removed.position(), 0);
+    assert_eq!(parts.position(b), Some(0));
+    assert_eq!(
+        parts.get(c).map(|part| part.value().name.as_str()),
+        Some("c")
+    );
+    assert!(parts.get(a).is_none());
 
-    parts
-        .restore(a, 2, removed)
-        .expect("the handle is a tombstone");
+    parts.swap(0, 1).expect("in range");
+    parts.restore(removed).expect("the handle is a tombstone");
 
-    let names: Vec<_> = parts.iter().map(|part| part.name.as_str()).collect();
-    assert_eq!(names, ["b", "c", "a"]);
-    assert_eq!(parts.index_of(a), Some(2));
-    let in_order: Vec<_> = parts.iter_mut().map(|part| part.name.clone()).collect();
-    assert_eq!(in_order, ["b", "c", "a"]);
+    let names: Vec<_> = parts.values().map(|part| part.name.as_str()).collect();
+    assert_eq!(names, ["a", "c", "b"]);
+    assert_eq!(parts.position(a), Some(0));
+    let in_order: Vec<_> = parts.values_mut().map(|part| part.name.clone()).collect();
+    assert_eq!(in_order, ["a", "c", "b"]);
 }
 
 #[test]
@@ -251,20 +250,21 @@ fn merging_parts_keeps_the_first_part_handle() {
     let mut second = MapPart::new("second");
     let source = from_path();
     let object = first_part(&source)
-        .iter_all_objects()
+        .objects
+        .values()
         .next()
         .cloned()
         .expect("from_path has an object");
-    let _id = first.add_object(object.clone());
-    let _id = second.add_object(object);
+    let _id = first.objects.push(object.clone());
+    let _id = second.objects.push(object);
     let first = parts.push(first);
     let _second = parts.push(second);
 
     parts.merge_all_parts(None);
 
     assert_eq!(parts.len(), 1);
-    assert_eq!(parts.index_of(first), Some(0));
-    assert_eq!(parts.get_by_id(first).map(MapPart::len), Some(2));
+    assert_eq!(parts.position(first), Some(0));
+    assert_eq!(parts.get(first).map(|part| part.objects.len()), Some(2));
 }
 
 #[cfg(feature = "serde")]
@@ -272,20 +272,19 @@ fn merging_parts_keeps_the_first_part_handle() {
 fn a_serde_round_trip_drops_tombstones_and_keeps_live_handles() {
     let mut map = from_path();
     let ids = object_ids(&map);
-    let (_, _, removed) = first_part_mut(&mut map)
-        .remove_object(ids[0])
+    let removed = first_part_mut(&mut map)
+        .objects
+        .remove(ids[0])
         .expect("resolves");
 
     let json = serde_json::to_string(&map).expect("serialize");
     let mut read: Omap = serde_json::from_str(&json).expect("deserialize");
 
     for &id in &ids[1..] {
-        assert!(first_part(&read).contains(id));
+        assert!(first_part(&read).objects.contains(id));
     }
     assert!(
-        first_part_mut(&mut read)
-            .restore_object(ids[0], 0, removed)
-            .is_err(),
+        first_part_mut(&mut read).objects.restore(removed).is_err(),
         "a tombstone is not serialized"
     );
 }
@@ -294,8 +293,9 @@ fn a_serde_round_trip_drops_tombstones_and_keeps_live_handles() {
 fn pruning_copies_only_what_held_a_dangling_reference() {
     let mut map = from_path();
     let objects: Vec<(ObjectId, Option<SymbolId>)> = first_part(&map)
-        .objects()
-        .map(|(id, object)| (id, object.symbol()))
+        .objects
+        .iter()
+        .map(|object| (object.id(), object.symbol()))
         .collect();
     let gone = objects
         .iter()
@@ -320,8 +320,8 @@ fn pruning_copies_only_what_held_a_dangling_reference() {
 
     let shared = |map: &Omap, id| {
         Arc::ptr_eq(
-            first_part(map).object_arc(id).expect("resolves"),
-            first_part(&copy).object_arc(id).expect("resolves"),
+            first_part(map).objects.get_arc(id).expect("resolves"),
+            first_part(&copy).objects.get_arc(id).expect("resolves"),
         )
     };
     for &(id, symbol) in &objects {
@@ -336,8 +336,8 @@ fn pruning_copies_only_what_held_a_dangling_reference() {
     map.prune_dangling_references();
     for &(id, _) in &objects {
         assert!(Arc::ptr_eq(
-            first_part(&map).object_arc(id).expect("resolves"),
-            first_part(&again).object_arc(id).expect("resolves"),
+            first_part(&map).objects.get_arc(id).expect("resolves"),
+            first_part(&again).objects.get_arc(id).expect("resolves"),
         ));
     }
 }
@@ -352,20 +352,25 @@ fn removing_a_symbols_objects_shares_them_and_restoring_puts_them_back_in_place(
     let before: Vec<ObjectId> = object_ids(&map);
     let copy = map.clone();
 
-    let removed = first_part_mut(&mut map).remove_by_symbol(symbol);
+    let removed = first_part_mut(&mut map).objects.remove_by_symbol(symbol);
 
     assert!(!removed.is_empty());
-    for (id, index, object) in &removed {
-        assert_eq!(first_part(&copy).index_of(*id), Some(*index));
+    for object in &removed {
+        let id = object.id();
+        assert_eq!(
+            first_part(&copy).objects.position(id),
+            Some(object.position())
+        );
         assert!(Arc::ptr_eq(
-            object,
-            first_part(&copy).object_arc(*id).expect("in the copy")
+            object.value(),
+            first_part(&copy).objects.get_arc(id).expect("in the copy")
         ));
-        assert!(first_part(&map).object(*id).is_none());
+        assert!(first_part(&map).objects.get(id).is_none());
     }
-    for (id, index, object) in removed {
+    for object in removed {
         first_part_mut(&mut map)
-            .restore_object(id, index, object)
+            .objects
+            .restore(object)
             .expect("a tombstone");
     }
     assert_eq!(object_ids(&map), before);
@@ -376,20 +381,18 @@ fn a_removed_symbol_or_color_comes_back_as_the_very_value_the_set_shared() {
     let mut map = from_path();
     let symbol = map.symbols.ids().next().expect("a symbol");
     let shared = Arc::clone(map.symbols.get_arc(symbol).expect("resolves"));
-    let (_, _, removed) = map.symbols.remove(symbol).expect("resolves");
-    assert!(Arc::ptr_eq(&removed, &shared));
+    let removed = map.symbols.remove(symbol).expect("resolves");
+    assert!(Arc::ptr_eq(removed.value(), &shared));
 
     let (color, shared) = {
         let id = map.colors.ids().next().expect("a color");
         (id, Arc::clone(map.colors.get_arc(id).expect("resolves")))
     };
-    let (id, priority, removed) = map.colors.remove_at(0).expect("a color");
-    assert_eq!(priority, 0);
-    assert_eq!(id, color);
-    assert!(Arc::ptr_eq(&removed, &shared));
-    map.colors
-        .restore(id, priority, removed)
-        .expect("a tombstone");
+    let removed = map.colors.remove_at(0).expect("a color");
+    assert_eq!(removed.position(), 0);
+    assert_eq!(removed.id(), color);
+    assert!(Arc::ptr_eq(removed.value(), &shared));
+    map.colors.restore(removed).expect("a tombstone");
     assert!(Arc::ptr_eq(
         map.colors.get_arc(color).expect("back"),
         &shared
@@ -486,7 +489,7 @@ fn pruning_empties_a_removed_public_part_in_place() {
     assert_eq!(
         map.validate(),
         Err(omap::ValidationError::DanglingCombinedComponent {
-            symbol_index: map.symbols.index_of(combined).expect("resolves"),
+            symbol_index: map.symbols.position(combined).expect("resolves"),
         })
     );
     let copy = map.clone();
@@ -507,7 +510,7 @@ fn pruning_empties_a_removed_public_part_in_place() {
     let reread = Omap::from_bytes(&bytes).expect("reads back");
     let reread_combined = reread
         .symbols
-        .find_at(map.symbols.index_of(combined).expect("resolves"))
+        .at(map.symbols.position(combined).expect("resolves"))
         .expect("same place")
         .id();
     assert_eq!(

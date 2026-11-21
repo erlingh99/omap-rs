@@ -113,10 +113,12 @@ fn main() -> Result<(), Error> {
     ls.tags.insert("Some Key".to_string(), "My value".to_string());
 
     // A map can have multiple parts let's add the object to the first one
-    map.parts
-        .get_mut(0)
+    let _id = map
+        .parts
+        .at_mut(0)
         .expect("a default map contains one map part")
-        .add_object(ls);
+        .objects
+        .push(ls);
 
     // O-mapper makes no difference between combined line symbols and combined area symbols, but we do
     // This will debug-print a `CombinedLineSymbol`

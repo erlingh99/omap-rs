@@ -59,9 +59,10 @@ fn main() -> Result<(), Error> {
         .insert("Some Key".to_owned(), "My value".to_owned());
 
     map.parts
-        .get_mut(0)
+        .at_mut(0)
         .expect("the default map has a first part")
-        .add_object(ls);
+        .objects
+        .push(ls);
 
     println!("\nCombined Line symbols:");
     for symbol in map.symbols.values() {
@@ -70,7 +71,7 @@ fn main() -> Result<(), Error> {
         }
     }
     if let Some(s) = map.symbols.find_by_name("Railway, Olive background") {
-        println!("{:?}", s.symbol());
+        println!("{:?}", s.value());
     }
 
     let mut num = 0;

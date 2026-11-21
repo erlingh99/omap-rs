@@ -1,6 +1,6 @@
 slotmap::new_key_type! {
     /// The arena slot a part handle names.
-    pub(crate) struct PartKey;
+    pub struct PartKey;
 }
 
 /// A handle to a part in [`crate::parts::MapParts`].
@@ -12,3 +12,5 @@ slotmap::new_key_type! {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PartId(pub(crate) PartKey);
+
+crate::collection::impl_handle!(PartId, PartKey);

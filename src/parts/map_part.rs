@@ -1,26 +1,30 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 
-use crate::arena::{Arena, removed_as};
-use crate::objects::{MapObject, ObjectId, ObjectKey};
+use crate::objects::{MapObject, ObjectId};
 use crate::symbols::{SymbolId, SymbolSet};
 use crate::utils::try_get_attr;
-use crate::{Error, OmapSection, Result};
+use crate::{Collection, Error, OmapSection, Removed, Result};
+
+/// The objects of a [`MapPart`], in file order.
+///
+/// Empty line and area objects are kept for further editing, but are omitted
+/// when the map is written. See [`Collection`] for everything a set does.
+pub type MapObjects = Collection<ObjectId, MapObject>;
 
 /// A map part (layer) containing objects.
 ///
-/// Objects are kept in file order and named by [`ObjectId`] handles. Cloning a
-/// part is cheap: the copies share every object until one of them changes it,
-/// and a change copies only the object it touches.
-#[derive(Debug, Clone)]
+/// Cloning a part is cheap: the copies share every object until one of them
+/// changes it, and a change copies only the object it touches.
+#[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MapPart {
     /// The name of this map part.
     pub name: String,
-    objects: Arena<MapObject, ObjectKey>,
+    /// The objects in this part, in file order.
+    pub objects: MapObjects,
 }
 
 impl MapPart {
@@ -28,18 +32,8 @@ impl MapPart {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            objects: Arena::new(),
+            objects: MapObjects::new(),
         }
-    }
-}
-
-impl MapPart {
-    /// Add an object to the end of the part and return its handle.
-    ///
-    /// Empty line and area objects are retained for further editing, but are
-    /// omitted when the map is written.
-    pub fn add_object(&mut self, object: impl Into<MapObject>) -> ObjectId {
-        ObjectId(self.objects.push(object.into()))
     }
 
     /// Adds every object of `other` to the end of this part, under new
@@ -47,155 +41,37 @@ impl MapPart {
     pub(super) fn merge(&mut self, other: &Self) {
         self.objects.extend_shared(&other.objects);
     }
+}
 
-    /// Remove every object drawn with `key` from this part. Each comes back as
-    /// `(id, index, object)`, in file order: [`MapPart::restore_object`] on
-    /// each in that order puts them all back.
-    pub fn remove_by_symbol(&mut self, key: SymbolId) -> Vec<(ObjectId, usize, Arc<MapObject>)> {
-        self.objects
-            .remove_where(|object| object.symbol() == Some(key))
-            .into_iter()
-            .map(removed_as(ObjectId))
-            .collect()
+impl MapObjects {
+    /// Remove every object drawn with `symbol`. They come back in file order:
+    /// [`Collection::restore`] on each in that order puts them all back.
+    pub fn remove_by_symbol(&mut self, symbol: SymbolId) -> Vec<Removed<ObjectId, MapObject>> {
+        self.remove_where(|object| object.symbol() == Some(symbol))
     }
 
-    /// Get objects associated with a symbol.
-    pub fn objects_by_symbol(&self, key: SymbolId) -> impl Iterator<Item = &MapObject> {
-        self.objects
-            .values()
-            .filter(move |mo| mo.symbol() == Some(key))
+    /// The objects drawn with `symbol`.
+    pub fn by_symbol(&self, symbol: SymbolId) -> impl Iterator<Item = &MapObject> {
+        self.values()
+            .filter(move |object| object.symbol() == Some(symbol))
     }
 
-    /// Get a mutable reference to objects associated with a symbol.
-    pub fn objects_by_symbol_mut(&mut self, key: SymbolId) -> impl Iterator<Item = &mut MapObject> {
-        self.objects
-            .values_mut_where(move |mo| mo.symbol() == Some(key))
-    }
-
-    /// Mutably iterate over the objects `matches`, copying only those out of
+    /// The objects drawn with `symbol`, to change. Only those are copied out of
     /// a shared part.
-    pub(crate) fn objects_mut_where<F: Fn(&MapObject) -> bool>(
-        &mut self,
-        matches: F,
-    ) -> impl Iterator<Item = &mut MapObject> {
-        self.objects.values_mut_where(matches)
+    pub fn by_symbol_mut(&mut self, symbol: SymbolId) -> impl Iterator<Item = &mut MapObject> {
+        self.values_mut_where(move |object| object.symbol() == Some(symbol))
     }
 
-    /// Get the number of distinct symbols with objects in this part.
+    /// The number of distinct symbols these objects are drawn with.
     pub fn num_symbols(&self) -> usize {
-        let mut seen = HashSet::new();
-        let mut count = 0;
-        for obj in self.objects.values() {
-            if seen.insert(obj.symbol()) {
-                count += 1;
-            }
-        }
-        count
+        self.values()
+            .map(MapObject::symbol)
+            .collect::<HashSet<_>>()
+            .len()
     }
+}
 
-    /// Get the total number of objects in this part, including objects with
-    /// empty geometry that will be omitted when the map is written.
-    pub fn len(&self) -> usize {
-        self.objects.len()
-    }
-
-    /// Returns `true` if this part contains no objects.
-    pub fn is_empty(&self) -> bool {
-        self.objects.is_empty()
-    }
-
-    /// Iterate through all objects in this map-part in a flat iterator, in file order.
-    pub fn iter_all_objects(&self) -> impl Iterator<Item = &MapObject> {
-        self.objects.values()
-    }
-
-    /// Iterate mutably through all objects in this map-part in a flat iterator.
-    ///
-    /// On a part that shares its objects with a copy, this copies every object.
-    pub fn iter_all_objects_mut(&mut self) -> impl Iterator<Item = &mut MapObject> {
-        self.objects.values_mut()
-    }
-
-    /// Consume this map-part and get all the objects it contains, in file order.
-    pub fn into_objects(self) -> Vec<MapObject> {
-        self.objects
-            .into_values()
-            .map(Arc::unwrap_or_clone)
-            .collect()
-    }
-
-    /// Every object with its handle, in file order.
-    pub fn objects(&self) -> impl Iterator<Item = (ObjectId, &MapObject)> {
-        self.objects
-            .iter()
-            .map(|(key, object)| (ObjectId(key), object))
-    }
-
-    /// Returns `true` if `id` names an object in this part.
-    pub fn contains(&self, id: ObjectId) -> bool {
-        self.objects.contains(id.0)
-    }
-
-    /// The object `id` names.
-    pub fn object(&self, id: ObjectId) -> Option<&MapObject> {
-        self.objects.get(id.0)
-    }
-
-    /// The object `id` names, to change. Copies it first if a copy of this
-    /// part shares it.
-    pub fn object_mut(&mut self, id: ObjectId) -> Option<&mut MapObject> {
-        self.objects.get_mut(id.0)
-    }
-
-    /// The shared object behind a handle; a copy of this part holds the same
-    /// [`Arc`] until either side changes that object.
-    pub fn object_arc(&self, id: ObjectId) -> Option<&Arc<MapObject>> {
-        self.objects.get_arc(id.0)
-    }
-
-    /// The position of the object `id` names, in file order.
-    pub fn index_of(&self, id: ObjectId) -> Option<usize> {
-        self.objects.position(id.0)
-    }
-
-    /// Remove the object `id` names. Comes back as `(id, index, object)`, the
-    /// arguments [`MapPart::restore_object`] takes to put it back; the handle
-    /// stays reserved until then.
-    pub fn remove_object(&mut self, id: ObjectId) -> Option<(ObjectId, usize, Arc<MapObject>)> {
-        self.objects.remove(id.0).map(removed_as(ObjectId))
-    }
-
-    /// Remove the object at `index` in file order, as
-    /// [`MapPart::remove_object`] does.
-    pub fn remove_object_at(&mut self, index: usize) -> Option<(ObjectId, usize, Arc<MapObject>)> {
-        self.objects.remove_at(index).map(removed_as(ObjectId))
-    }
-
-    /// Put a removed object back under its own handle at `index` in file order.
-    ///
-    /// # Errors
-    ///
-    /// Hands `object` back if `id` is not a removed handle of this part, or
-    /// `index > self.len()`. A handle does not record what issued it, so one
-    /// from elsewhere naming a slot removed here is taken.
-    pub fn restore_object(
-        &mut self,
-        id: ObjectId,
-        index: usize,
-        object: Arc<MapObject>,
-    ) -> std::result::Result<(), Arc<MapObject>> {
-        self.objects.restore(id.0, index, object)
-    }
-
-    /// Put `object` in place of the object `id` names, returning the one replaced.
-    pub fn replace_object(
-        &mut self,
-        id: ObjectId,
-        object: Arc<MapObject>,
-    ) -> Option<Arc<MapObject>> {
-        self.objects.replace(id.0, object)
-    }
-
+impl MapPart {
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         element: &BytesStart<'_>,
@@ -284,7 +160,7 @@ mod tests {
     };
 
     fn empty_symbol_set() -> SymbolSet {
-        SymbolSet::new("Empty")
+        SymbolSet::new()
     }
 
     #[test]
@@ -298,7 +174,7 @@ mod tests {
 
         let part = MapPart::parse(&mut reader, &start, &empty_symbol_set())?;
 
-        assert!(part.is_empty());
+        assert!(part.objects.is_empty());
         Ok(())
     }
 
@@ -306,18 +182,20 @@ mod tests {
     fn empty_objects_are_retained_in_memory_and_skipped_on_write() -> Result<()> {
         let symbol = None;
         let mut part = MapPart::new("Map");
-        part.add_object(LineObject::new(symbol, LineString::new(Vec::new())));
-        assert_eq!(part.len(), 1);
+        let _id = part
+            .objects
+            .push(LineObject::new(symbol, LineString::new(Vec::new())));
+        assert_eq!(part.objects.len(), 1);
 
-        part.add_object(LineObject::new(
+        let _id = part.objects.push(LineObject::new(
             symbol,
             LineString::new(vec![coord! { x: 0., y: 0. }, coord! { x: 1., y: 0. }]),
         ));
-        let Some(MapObject::Line(line)) = part.iter_all_objects_mut().nth(1) else {
+        let Some(MapObject::Line(line)) = part.objects.values_mut().nth(1) else {
             panic!("expected line object");
         };
         *line.geometry_mut() = crate::objects::BezierPath::empty();
-        assert_eq!(part.len(), 2);
+        assert_eq!(part.objects.len(), 2);
 
         let mut writer = Writer::new(Vec::new());
         part.write(&mut writer, &empty_symbol_set())?;

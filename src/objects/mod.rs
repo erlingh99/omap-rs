@@ -21,7 +21,6 @@ pub use point_object::PointObject;
 pub use text_object::{HorizontalAlign, TextGeometry, TextObject, VerticalAlign, WrapBox};
 
 pub use ids::ObjectId;
-pub(crate) use ids::ObjectKey;
 pub use map_object::MapObject;
 
 use crate::{

@@ -27,14 +27,13 @@ impl CombinedAreaSymbol {
         let mut min = f64::MAX;
         for part in self.components() {
             let area = match part {
-                PublicOrPrivateSymbol::Public(Some(id)) => match symbol_set
-                    .get(SymbolId::from(*id))
-                    .map(|symbol| symbol.symbol())
-                {
-                    Some(Symbol::Area(symbol)) => symbol.minimum_area.get(),
-                    Some(Symbol::CombinedArea(symbol)) => symbol.minimum_area(symbol_set),
-                    _ => 0.,
-                },
+                PublicOrPrivateSymbol::Public(Some(id)) => {
+                    match symbol_set.get(SymbolId::from(*id)).map(crate::Entry::value) {
+                        Some(Symbol::Area(symbol)) => symbol.minimum_area.get(),
+                        Some(Symbol::CombinedArea(symbol)) => symbol.minimum_area(symbol_set),
+                        _ => 0.,
+                    }
+                }
                 PublicOrPrivateSymbol::Public(None) => 0.,
                 PublicOrPrivateSymbol::Private(AreaOrLineSymbol::Area(symbol)) => {
                     symbol.minimum_area.get()

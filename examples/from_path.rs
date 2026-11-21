@@ -121,10 +121,11 @@ fn main() -> Result<(), Error> {
     ls.tags_mut()
         .insert("Some Key".to_owned(), "My value".to_owned());
 
-    map.parts
-        .get_mut(0)
-        .expect("the example map has a first part")
-        .add_object(ls);
+    let part = map
+        .parts
+        .at_mut(0)
+        .expect("the example map has a first part");
+    part.objects.push(ls);
 
     let contour_value = map
         .symbols
@@ -137,10 +138,7 @@ fn main() -> Result<(), Error> {
         TextGeometry::SingleAnchor(Coord { x: 0., y: 0. }),
         "This is the middle of the map".to_owned(),
     );
-    map.parts
-        .get_mut(0)
-        .expect("the example map has a first part")
-        .add_object(ts);
+    part.objects.push(ts);
 
     println!("Does the map pass validation: {:?}", map.validate());
 

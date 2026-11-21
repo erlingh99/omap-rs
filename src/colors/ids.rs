@@ -1,6 +1,6 @@
 slotmap::new_key_type! {
     /// The arena slot a color handle names.
-    pub(crate) struct ColorKey;
+    pub struct ColorKey;
 }
 
 /// The kind of a color.
@@ -13,7 +13,7 @@ pub enum ColorKind {
     Mixed,
 }
 
-/// Widening a typed handle is infallible. Narrowing a [`crate::colors::ColorRef`]
+/// Widening a typed handle is infallible. Narrowing an [`crate::Entry`] of a color
 /// checks the kind of the referenced color.
 macro_rules! color_ids {
     ($(
@@ -37,10 +37,10 @@ macro_rules! color_ids {
                 }
             )*
 
-            impl TryFrom<crate::colors::ColorRef<'_>> for $name {
+            impl TryFrom<crate::Entry<'_, ColorId, crate::colors::Color>> for $name {
                 type Error = crate::Error;
 
-                fn try_from(value: crate::colors::ColorRef<'_>) -> crate::Result<Self> {
+                fn try_from(value: crate::Entry<'_, ColorId, crate::colors::Color>) -> crate::Result<Self> {
                     const EXPECTED: &[ColorKind] = &[$(ColorKind::$kind),+];
                     let found = value.kind();
                     if EXPECTED.contains(&found) {
@@ -67,3 +67,5 @@ color_ids! {
     /// A handle to a [`crate::colors::MixedColor`].
     MixedColorId(Mixed) => [ColorId];
 }
+
+crate::collection::impl_handle!(ColorId, ColorKey);

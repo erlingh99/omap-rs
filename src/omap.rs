@@ -20,7 +20,6 @@ use crate::{
     geo_referencing::{GeoRef, MapTransform},
     notes,
     objects::MapObject,
-    parts::MapPart,
     parts::MapParts,
     symbols::SymbolSet,
     templates::Templates,
@@ -62,6 +61,8 @@ pub struct Omap {
     pub colors: ColorSet,
     /// The set of map symbols.
     pub symbols: SymbolSet,
+    /// The name of the symbol set, such as `ISOM 2017-2`.
+    pub symbol_set_name: String,
     /// The map parts (layers) containing objects.
     pub parts: MapParts,
     /// Background templates attached to the map.
@@ -158,7 +159,8 @@ impl Omap {
             notes: Default::default(),
             geo_referencing: GeoRef::new(scale_denominator),
             colors: ColorSet::new(),
-            symbols: SymbolSet::new("Custom"),
+            symbols: SymbolSet::new(),
+            symbol_set_name: "Custom".to_owned(),
             parts: MapParts::new_with_default_part(),
             templates: Default::default(),
             view: Default::default(),
@@ -224,7 +226,7 @@ impl Omap {
                         }
                     }
                     "parts" => {
-                        if let Some(symbols) = &symbols {
+                        if let Some((symbols, _)) = &symbols {
                             parts = Some(MapParts::parse(&mut reader, symbols)?);
                         } else {
                             return Err(Error::SectionOutOfOrder {
@@ -252,13 +254,16 @@ impl Omap {
             }
         }
 
+        let (symbols, symbol_set_name) =
+            symbols.ok_or(Error::MissingRequiredSection(crate::OmapSection::Symbols))?;
         Ok(Self {
             notes,
             geo_referencing: georef.ok_or(Error::MissingRequiredSection(
                 crate::OmapSection::Georeferencing,
             ))?,
             colors: colors.ok_or(Error::MissingRequiredSection(crate::OmapSection::Colors))?,
-            symbols: symbols.ok_or(Error::MissingRequiredSection(crate::OmapSection::Symbols))?,
+            symbols,
+            symbol_set_name,
             parts: parts.ok_or(Error::MissingRequiredSection(crate::OmapSection::Parts))?,
             templates,
             view,
@@ -305,7 +310,8 @@ impl Omap {
         self.colors.write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
         // write symbols
-        self.symbols.write(&mut writer, &self.colors)?;
+        self.symbols
+            .write(&mut writer, &self.colors, &self.symbol_set_name)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
         // write objects
         self.parts.write(&mut writer, &self.symbols)?;
@@ -371,21 +377,21 @@ impl Omap {
 
     /// Iterate through all objects of every map part in a flat iterator.
     ///
-    /// The whole-map counterpart of [`MapPart::iter_all_objects`]; parts are
+    /// The whole-map counterpart of [`crate::parts::MapPart::objects`]; parts are
     /// visited in order, objects within a part in file order.
     pub fn iter_all_objects(&self) -> impl Iterator<Item = &MapObject> {
-        self.parts.iter().flat_map(MapPart::iter_all_objects)
+        self.parts.values().flat_map(|part| part.objects.values())
     }
 
     /// Iterate mutably through all objects of every map part in a flat iterator.
     ///
-    /// The whole-map counterpart of [`MapPart::iter_all_objects_mut`]; parts are
+    /// The whole-map counterpart of [`crate::parts::MapPart::objects`]; parts are
     /// visited in order, objects within a part in file order. On a map
     /// that shares its objects with a copy, this copies every object.
     pub fn iter_all_objects_mut(&mut self) -> impl Iterator<Item = &mut MapObject> {
         self.parts
-            .iter_mut()
-            .flat_map(MapPart::iter_all_objects_mut)
+            .values_mut()
+            .flat_map(|part| part.objects.values_mut())
     }
 
     /// Transform every object and non-georeferenced template in the map.
@@ -418,8 +424,8 @@ impl Omap {
         F: Fn(Coord) -> std::result::Result<Coord, E>,
     {
         let mut parts = self.parts.clone();
-        for part in &mut parts {
-            for object in part.iter_all_objects_mut() {
+        for part in parts.values_mut() {
+            for object in part.objects.values_mut() {
                 object.try_transform(&transform)?;
             }
         }
@@ -471,9 +477,9 @@ impl Omap {
         let dangles = |object: &MapObject| object.dangles(&live);
         for part in self
             .parts
-            .values_mut_where(|part| part.iter_all_objects().any(dangles))
+            .values_mut_where(|part| part.objects.values().any(dangles))
         {
-            for object in part.objects_mut_where(dangles) {
+            for object in part.objects.values_mut_where(dangles) {
                 object.prune(&live);
             }
         }
@@ -538,9 +544,11 @@ mod tests {
     #[test]
     fn try_transform_is_transactional() -> Result<()> {
         let mut map = Omap::new(NonZeroU32::new(10_000).expect("the scale is nonzero"));
-        let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
-        part.add_object(PointObject::new(None, Point::new(1.0, 2.0)));
-        part.add_object(PointObject::new(None, Point::new(10.0, 20.0)));
+        let part = map.parts.at_mut(0).ok_or(Error::ObjectError)?;
+        part.objects
+            .push(PointObject::new(None, Point::new(1.0, 2.0)));
+        part.objects
+            .push(PointObject::new(None, Point::new(10.0, 20.0)));
         let before = point_positions(&map);
 
         let result = map.try_transform(|coord| {
@@ -569,11 +577,12 @@ mod tests {
                 "dot",
             ));
 
-        let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
-        part.add_object(PointObject::new(Some(point), Point::new(1.0, 2.0)));
+        let part = map.parts.at_mut(0).ok_or(Error::ObjectError)?;
+        part.objects
+            .push(PointObject::new(Some(point), Point::new(1.0, 2.0)));
         assert!(map.validate().is_ok(), "a live handle must validate");
 
-        let _removed = map.symbols.remove(point.into());
+        let _removed = map.symbols.remove(point);
         assert!(
             matches!(
                 map.validate(),
@@ -587,8 +596,9 @@ mod tests {
     #[test]
     fn an_object_without_a_symbol_validates() -> Result<()> {
         let mut map = Omap::new(NonZeroU32::new(10_000).ok_or(Error::ObjectError)?);
-        let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
-        part.add_object(PointObject::new(None, Point::new(1.0, 2.0)));
+        let part = map.parts.at_mut(0).ok_or(Error::ObjectError)?;
+        part.objects
+            .push(PointObject::new(None, Point::new(1.0, 2.0)));
 
         assert!(map.validate().is_ok());
         Ok(())
@@ -603,8 +613,9 @@ mod tests {
         fs::write(&path, b"previous map")?;
 
         let mut map = Omap::new(NonZeroU32::new(10_000).ok_or(Error::ObjectError)?);
-        let part = map.parts.get_mut(0).ok_or(Error::ObjectError)?;
-        part.add_object(PointObject::new(None, Point::new(3_000_000.0, 0.0)));
+        let part = map.parts.at_mut(0).ok_or(Error::ObjectError)?;
+        part.objects
+            .push(PointObject::new(None, Point::new(3_000_000.0, 0.0)));
 
         let result = map.to_file(&path);
         assert!(matches!(result, Err(Error::MapCoordOutOfBounds)));
@@ -627,11 +638,12 @@ mod tests {
 
         let part = map
             .parts
-            .get_mut(0)
+            .at_mut(0)
             .expect("the default map has a first part");
-        part.add_object(PointObject::new(Some(point), Point::new(1.0, 2.0)));
+        part.objects
+            .push(PointObject::new(Some(point), Point::new(1.0, 2.0)));
 
-        let _removed = map.symbols.remove(point.into());
+        let _removed = map.symbols.remove(point);
         assert!(map.validate().is_err(), "the object now dangles");
 
         map.prune_dangling_references();

@@ -127,7 +127,7 @@ pub(crate) fn colors_through(
             continue;
         }
         if let Some(part) = symbol_set.get(id) {
-            part.symbol().references(&mut |reference| match reference {
+            part.value().references(&mut |reference| match reference {
                 Reference::Color(id) => colors.push(id),
                 Reference::Symbol(id) => pending.push(id),
             });
@@ -479,12 +479,12 @@ mod tests {
         let spot = colors.get(color).unwrap().as_spot().unwrap();
         let _removed = colors.remove(color);
 
-        let mut symbols = SymbolSet::new("test");
+        let mut symbols = SymbolSet::new();
         let point = symbols.add_point_symbol(PointSymbol::new(Code::default(), "point"));
         let line = symbols.add_line_symbol(LineSymbol::new(Code::default(), "line"));
-        let path = symbols.get(line.into()).unwrap().as_path().unwrap();
-        let _removed = symbols.remove(point.into());
-        let _removed = symbols.remove(line.into());
+        let path = symbols.get(line).unwrap().as_path().unwrap();
+        let _removed = symbols.remove(point);
+        let _removed = symbols.remove(line);
 
         Gone {
             color,

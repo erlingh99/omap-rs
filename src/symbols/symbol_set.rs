@@ -1,48 +1,35 @@
 use super::combined_area_symbol::UnresolvedPart;
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use quick_xml::{
     Reader, Writer,
     events::{BytesEnd, BytesStart, Event},
 };
 
-use super::{Symbol, SymbolKey};
-use crate::arena::{Arena, removed_as};
+use super::Symbol;
 use crate::{
-    Code, Error, OmapSection, Result,
+    Code, Collection, Entry, Error, OmapSection, Removed, Result,
     colors::ColorSet,
     symbols::{
-        AreaOrLineSymbol, AreaSymbol, CombinedAreaSymbol, CombinedAreaSymbolId, CombinedLineSymbol,
-        CombinedLineSymbolId, LinePathSymbolId, LineSymbol, PathSymbolId, PointSymbol,
-        PublicOrPrivateSymbol, SymbolId, SymbolRef, TextSymbol,
+        AreaOrLineSymbol, AreaPathSymbolId, AreaSymbol, AreaSymbolId, CombinedAreaSymbol,
+        CombinedAreaSymbolId, CombinedLineSymbol, CombinedLineSymbolId, LinePathSymbolId,
+        LineSymbol, LineSymbolId, PathSymbolId, PointSymbol, PointSymbolId, PublicOrPrivateSymbol,
+        SymbolId, TextSymbol, TextSymbolId,
     },
     utils::{try_get_attr, try_get_attr_raw},
 };
 
-/// A collection of symbols.
+/// The map's symbols, in file order.
 ///
-/// Position in the set is the symbol's file index, which is what the `.omap`
-/// format stores in every object and every combined-symbol component. A
-/// [`SymbolId`] is independent of that: it keeps naming the same symbol across
-/// [`SymbolSet::sort`], and stops resolving once that symbol is removed.
+/// A symbol's position in the set is its file index, which is what the `.omap`
+/// format stores in every object and every combined-symbol part. A
+/// [`SymbolId`] keeps naming the same symbol across [`SymbolSet::sort`], and
+/// stops resolving once that symbol is removed; see [`Collection`] for
+/// everything a set does.
 ///
 /// A [`SymbolId`] left over from a removed symbol is written as the format's
-/// `-1` unknown-symbol sentinel, exactly as a dangling weak reference was.
-///
-/// # A handle belongs to one set
-///
-/// Handles are slot keys, not pointers, so they carry no record of which set
-/// minted them. Using one against a *different* [`SymbolSet`] is not caught:
-/// it resolves to whatever occupies that slot, which is an unrelated symbol
-/// rather than a `None`. Keep a handle with the [`crate::Omap`] it came from.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct SymbolSet {
-    symbols: Arena<Symbol, SymbolKey>,
-    /// The name of the symbol set.
-    pub name: String,
-}
+/// `-1` unknown-symbol sentinel.
+pub type SymbolSet = Collection<SymbolId, Symbol>;
 
 macro_rules! impl_typed_accessors {
     ($add:ident, $get:ident, $get_mut:ident, $iter:ident, $id:ident, $symbol:ident, $variant:ident) => {
@@ -50,82 +37,37 @@ macro_rules! impl_typed_accessors {
         ///
         /// The handle needs no narrowing conversion before it is given to an
         /// object, because the symbol's type already fixed its kind.
-        pub fn $add(&mut self, symbol: $symbol) -> crate::symbols::$id {
-            crate::symbols::$id(self.symbols.push(Symbol::$variant(Box::new(symbol))))
+        pub fn $add(&mut self, symbol: $symbol) -> $id {
+            $id(self.push(Symbol::$variant(Box::new(symbol))).0)
         }
 
         /// Get a symbol of this kind by its handle. Cannot return another kind.
-        pub fn $get(&self, id: crate::symbols::$id) -> Option<&$symbol> {
-            match self.symbols.get(id.0) {
-                Some(Symbol::$variant(symbol)) => Some(symbol),
+        pub fn $get(&self, id: $id) -> Option<&$symbol> {
+            match self.get(id)?.value() {
+                Symbol::$variant(symbol) => Some(symbol),
                 _ => None,
             }
         }
 
         /// Mutably get a symbol of this kind by its handle.
-        pub fn $get_mut(&mut self, id: crate::symbols::$id) -> Option<&mut $symbol> {
-            match self.symbols.get_mut(id.0) {
-                Some(Symbol::$variant(symbol)) => Some(symbol),
+        pub fn $get_mut(&mut self, id: $id) -> Option<&mut $symbol> {
+            match self.get_mut(id)? {
+                Symbol::$variant(symbol) => Some(symbol),
                 _ => None,
             }
         }
 
         /// Iterate over only the symbols of this kind, with their handles.
-        pub fn $iter(&self) -> impl Iterator<Item = (crate::symbols::$id, &$symbol)> {
-            self.symbols
-                .iter()
-                .filter_map(|(raw, symbol)| match symbol {
-                    Symbol::$variant(symbol) => Some((crate::symbols::$id(raw), &**symbol)),
-                    _ => None,
-                })
+        pub fn $iter(&self) -> impl Iterator<Item = ($id, &$symbol)> {
+            self.iter().filter_map(|entry| match entry.value() {
+                Symbol::$variant(symbol) => Some(($id(entry.id().0), &**symbol)),
+                _ => None,
+            })
         }
     };
 }
 
 impl SymbolSet {
-    pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            symbols: Arena::new(),
-            name: name.into(),
-        }
-    }
-
-    /// Get the number of symbols in the [`SymbolSet`].
-    pub fn len(&self) -> usize {
-        self.symbols.len()
-    }
-
-    /// Returns `true` if the symbol set contains no symbols.
-    pub fn is_empty(&self) -> bool {
-        self.symbols.is_empty()
-    }
-
-    /// Returns `true` if `id` names a symbol still in this set.
-    pub fn contains(&self, id: SymbolId) -> bool {
-        self.symbols.contains(id.0)
-    }
-
-    /// Add a new symbol of a kind known only at run time.
-    ///
-    /// Prefer the per-kind adders, such as [`SymbolSet::add_point_symbol`],
-    /// which return the handle for that kind and so need no narrowing.
-    pub fn add_symbol(&mut self, symbol: impl Into<Symbol>) -> SymbolId {
-        SymbolId(self.symbols.push(symbol.into()))
-    }
-
-    /// Resolve a handle, or `None` if it names a symbol no longer in this set.
-    ///
-    /// The result dereferences to the [`Symbol`] and narrows to a typed handle
-    /// through [`SymbolRef`]'s `as_*` methods.
-    pub fn get(&self, id: SymbolId) -> Option<SymbolRef<'_>> {
-        Some(SymbolRef::new(id, self.symbols.get(id.0)?))
-    }
-
-    /// Mutably get a symbol by its handle.
-    pub fn get_mut(&mut self, id: SymbolId) -> Option<&mut Symbol> {
-        self.symbols.get_mut(id.0)
-    }
-
     impl_typed_accessors!(
         add_point_symbol,
         point_symbol,
@@ -181,69 +123,27 @@ impl SymbolSet {
         CombinedLine
     );
 
-    /// Remove the [`Symbol`] the handle names. Comes back as
-    /// `(id, index, symbol)`, the arguments [`SymbolSet::restore`] takes to put
-    /// it back; the handle stays reserved until then.
-    pub fn remove(&mut self, id: SymbolId) -> Option<(SymbolId, usize, Arc<Symbol>)> {
-        self.symbols.remove(id.0).map(removed_as(SymbolId))
+    /// Remove the first symbol with the given [`Code`], as
+    /// [`Collection::remove`] does.
+    pub fn remove_by_code(&mut self, code: Code) -> Option<Removed<SymbolId, Symbol>> {
+        let position = self.values().position(|s| s.common().code == code)?;
+        self.remove_at(position)
     }
 
-    /// Remove the [`Symbol`] at file index `index`. Comes back as
-    /// `(id, index, symbol)`, the arguments [`SymbolSet::restore`] takes to put
-    /// it back; the handle stays reserved until then.
-    pub fn remove_at(&mut self, index: usize) -> Option<(SymbolId, usize, Arc<Symbol>)> {
-        self.symbols.remove_at(index).map(removed_as(SymbolId))
-    }
-
-    /// Remove the first [`Symbol`] with the given [`Code`], as
-    /// [`SymbolSet::remove`] does.
-    pub fn remove_by_code(&mut self, code: Code) -> Option<(SymbolId, usize, Arc<Symbol>)> {
-        let index = self.values().position(|s| s.common().code == code)?;
-        self.remove_at(index)
-    }
-
-    /// Remove the first [`Symbol`] with the given name, as
-    /// [`SymbolSet::remove`] does.
-    pub fn remove_by_name(&mut self, name: &str) -> Option<(SymbolId, usize, Arc<Symbol>)> {
-        let index = self.values().position(|s| s.common().name == name)?;
-        self.remove_at(index)
-    }
-
-    /// Put a removed symbol back under its own handle at file index `index`.
-    /// Objects and combined symbols that still name `id` use it again.
-    ///
-    /// # Errors
-    ///
-    /// Hands `symbol` back if `id` is not a removed handle of this set, or
-    /// `index > self.len()`. A handle does not record what issued it, so one
-    /// from elsewhere naming a slot removed here is taken.
-    pub fn restore(
-        &mut self,
-        id: SymbolId,
-        index: usize,
-        symbol: Arc<Symbol>,
-    ) -> std::result::Result<(), Arc<Symbol>> {
-        self.symbols.restore(id.0, index, symbol)
-    }
-
-    /// The shared symbol behind a handle; a copy of this set holds the same
-    /// [`Arc`] until either side changes that symbol.
-    pub fn get_arc(&self, id: SymbolId) -> Option<&Arc<Symbol>> {
-        self.symbols.get_arc(id.0)
-    }
-
-    /// Put `symbol` in place of the symbol `id` names, returning the one replaced.
-    pub fn replace(&mut self, id: SymbolId, symbol: Arc<Symbol>) -> Option<Arc<Symbol>> {
-        self.symbols.replace(id.0, symbol)
+    /// Remove the first symbol with the given name, as
+    /// [`Collection::remove`] does.
+    pub fn remove_by_name(&mut self, name: &str) -> Option<Removed<SymbolId, Symbol>> {
+        let position = self.values().position(|s| s.common().name == name)?;
+        self.remove_at(position)
     }
 
     /// Find a symbol by its [`Code`]. The first match is returned.
-    pub fn find_by_code(&self, code: Code) -> Option<SymbolRef<'_>> {
+    pub fn find_by_code(&self, code: Code) -> Option<Entry<'_, SymbolId, Symbol>> {
         self.iter().find(|symbol| symbol.common().code == code)
     }
 
     /// Find a symbol by its display name. The first match is returned.
-    pub fn find_by_name(&self, name: &str) -> Option<SymbolRef<'_>> {
+    pub fn find_by_name(&self, name: &str) -> Option<Entry<'_, SymbolId, Symbol>> {
         self.iter().find(|symbol| symbol.common().name == name)
     }
 
@@ -251,7 +151,7 @@ impl SymbolSet {
     pub fn find_all_by_code_major_component(
         &self,
         major: u16,
-    ) -> impl Iterator<Item = SymbolRef<'_>> {
+    ) -> impl Iterator<Item = Entry<'_, SymbolId, Symbol>> {
         self.iter().filter(move |s| s.common().code.major == major)
     }
 
@@ -260,68 +160,81 @@ impl SymbolSet {
         &self,
         major: u16,
         minor: u16,
-    ) -> impl Iterator<Item = SymbolRef<'_>> {
+    ) -> impl Iterator<Item = Entry<'_, SymbolId, Symbol>> {
         self.iter()
             .filter(move |s| s.common().code.major == major && s.common().code.minor == minor)
-    }
-
-    /// Get the symbol at a file index.
-    pub fn find_at(&self, index: usize) -> Option<SymbolRef<'_>> {
-        Some(SymbolRef::new(
-            SymbolId(self.symbols.id_at(index)?),
-            self.symbols.get_at(index)?,
-        ))
-    }
-
-    /// Get the file index of a symbol, or `None` if it is not in this set.
-    ///
-    /// This is the integer the `.omap` format stores for every reference to the
-    /// symbol, and the lookup every write performs.
-    pub fn index_of(&self, id: SymbolId) -> Option<usize> {
-        self.symbols.position(id.0)
     }
 
     /// The integer the `.omap` format stores for a symbol reference. No symbol,
     /// or a removed one, is the format's `-1` sentinel.
     pub fn file_index(&self, id: Option<impl Into<SymbolId>>) -> i32 {
-        id.and_then(|id| self.index_of(id.into()))
+        id.and_then(|id| self.position(id))
             .map_or(-1, |index| index as i32)
-    }
-
-    /// Iterate over the symbols and their handles, in file order.
-    pub fn iter(&self) -> impl Iterator<Item = SymbolRef<'_>> {
-        self.symbols
-            .iter()
-            .map(|(raw, symbol)| SymbolRef::new(SymbolId(raw), symbol))
-    }
-
-    /// Iterate over the symbols in file order.
-    pub fn values(&self) -> impl Iterator<Item = &Symbol> {
-        self.symbols.values()
-    }
-
-    /// Mutably iterate over the symbols in file order.
-    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Symbol> {
-        self.symbols.values_mut()
-    }
-
-    /// Mutably iterate over the symbols `matches`, copying only those out of
-    /// a shared set.
-    pub(crate) fn values_mut_where<F: Fn(&Symbol) -> bool>(
-        &mut self,
-        matches: F,
-    ) -> impl Iterator<Item = &mut Symbol> {
-        self.symbols.values_mut_where(matches)
-    }
-
-    /// Iterate over handles to every symbol, in file order.
-    pub fn ids(&self) -> impl Iterator<Item = SymbolId> {
-        self.iter().map(SymbolRef::id)
     }
 
     /// Sort the symbols by [`Code`]. Every handle stays valid.
     pub fn sort(&mut self) {
-        self.symbols.sort_by_key(|symbol| symbol.common().code);
+        self.sort_by_key(|symbol| symbol.common().code);
+    }
+}
+
+/// Narrowing a looked-up symbol to a typed handle.
+///
+/// A lookup and a narrowing compose in one expression:
+///
+/// ```
+/// # use omap::{Code, Omap};
+/// # fn example(map: &Omap) {
+/// let gully = map
+///     .symbols
+///     .find_by_code(Code::new(107, 0, 0))
+///     .and_then(|symbol| symbol.as_line_path());
+/// # }
+/// ```
+impl Entry<'_, SymbolId, Symbol> {
+    /// Narrow to a path handle, or `None` if this names another kind.
+    pub fn as_path(self) -> Option<PathSymbolId> {
+        PathSymbolId::try_from(self).ok()
+    }
+
+    /// Narrow to a line path handle, or `None` if this names another kind.
+    pub fn as_line_path(self) -> Option<LinePathSymbolId> {
+        LinePathSymbolId::try_from(self).ok()
+    }
+
+    /// Narrow to an area path handle, or `None` if this names another kind.
+    pub fn as_area_path(self) -> Option<AreaPathSymbolId> {
+        AreaPathSymbolId::try_from(self).ok()
+    }
+
+    /// Narrow to a point handle, or `None` if this names another kind.
+    pub fn as_point(self) -> Option<PointSymbolId> {
+        PointSymbolId::try_from(self).ok()
+    }
+
+    /// Narrow to a text handle, or `None` if this names another kind.
+    pub fn as_text(self) -> Option<TextSymbolId> {
+        TextSymbolId::try_from(self).ok()
+    }
+
+    /// Narrow to a line handle, or `None` if this names another kind.
+    pub fn as_line(self) -> Option<LineSymbolId> {
+        LineSymbolId::try_from(self).ok()
+    }
+
+    /// Narrow to an area handle, or `None` if this names another kind.
+    pub fn as_area(self) -> Option<AreaSymbolId> {
+        AreaSymbolId::try_from(self).ok()
+    }
+
+    /// Narrow to a combined line handle, or `None` if this names another kind.
+    pub fn as_combined_line(self) -> Option<CombinedLineSymbolId> {
+        CombinedLineSymbolId::try_from(self).ok()
+    }
+
+    /// Narrow to a combined area handle, or `None` if this names another kind.
+    pub fn as_combined_area(self) -> Option<CombinedAreaSymbolId> {
+        CombinedAreaSymbolId::try_from(self).ok()
     }
 }
 
@@ -392,7 +305,7 @@ impl SymbolSet {
         if !visited.insert(from) {
             return false;
         }
-        let components: Vec<SymbolId> = match self.get(from).map(|symbol| symbol.symbol()) {
+        let components: Vec<SymbolId> = match self.get(from).map(Entry::value) {
             Some(Symbol::CombinedArea(symbol)) => {
                 symbol.public_components().map(Into::into).collect()
             }
@@ -414,7 +327,7 @@ impl SymbolSet {
         reader: &mut Reader<R>,
         element: &BytesStart<'_>,
         colors: &ColorSet,
-    ) -> Result<Self> {
+    ) -> Result<(Self, String)> {
         let symbol_set_name = try_get_attr(element, "id")?.unwrap_or_else(|| "Custom".to_owned());
         let count = try_get_attr_raw(element, "count")
             .ok()
@@ -520,17 +433,14 @@ impl SymbolSet {
             symbols[idx] = Symbol::CombinedLine(Box::new(converted));
         }
 
-        let mut symbol_set = Self {
-            symbols: symbols.into_iter().collect(),
-            name: symbol_set_name,
-        };
+        let mut symbol_set: Self = symbols.into_iter().collect();
 
         // After conversion, so the handles name the correct types.
         for (index, parts) in components.into_iter().enumerate() {
             if parts.is_empty() {
                 continue;
             }
-            let Some(target) = symbol_set.find_at(index) else {
+            let Some(target) = symbol_set.at(index) else {
                 continue;
             };
             let combined_area = target.as_combined_area();
@@ -542,7 +452,7 @@ impl SymbolSet {
             } in parts
             {
                 let component = symbol_set
-                    .find_at(file_index)
+                    .at(file_index)
                     .ok_or(Error::SymbolSetIndexOutOfRange(file_index))?;
                 let kind = component.kind();
 
@@ -574,17 +484,18 @@ impl SymbolSet {
             }
         }
 
-        Ok(symbol_set)
+        Ok((symbol_set, symbol_set_name))
     }
 
     pub(crate) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         colors: &ColorSet,
+        name: &str,
     ) -> Result<()> {
         writer.write_event(Event::Start(BytesStart::new("symbols").with_attributes([
             ("count", self.len().to_string().as_str()),
-            ("id", self.name.as_str()),
+            ("id", name),
         ])))?;
         writer.get_mut().write_all(b"\n".as_slice())?;
         for (index, symbol) in self.values().enumerate() {
