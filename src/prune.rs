@@ -12,12 +12,11 @@
 
 use std::collections::HashSet;
 
-use crate::colors::{ColorId, ColorKey, MixedColor, SymbolColor};
+use crate::colors::{Color, ColorId, ColorKey, MixedColor, SymbolColor};
 use crate::objects::MapObject;
-use crate::symbols::PrivatePart;
 use crate::symbols::{
-    AreaOrLineSymbol, AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, Element, LineSymbol,
-    PointSymbol, PublicOrPrivateSymbol, Symbol, SymbolId, SymbolKey, TextSymbol,
+    AreaOrLineSymbol, AreaSymbol, BorderStyle, CombinedSymbol, Element, FillPattern, FramingMode,
+    LineSymbol, PointSymbol, PublicOrPrivateSymbol, Symbol, SymbolId, SymbolKey, TextSymbol,
 };
 
 /// The handles still present in each set.
@@ -36,57 +35,27 @@ impl Live {
     }
 }
 
-/// Whether pruning `color` would change it.
-pub(crate) fn color_dangles(color: &crate::colors::Color, live: &Live) -> bool {
-    match color {
-        crate::colors::Color::SpotColor(_) => false,
-        crate::colors::Color::MixedColor(mixed) => mixed
-            .components
-            .iter()
-            .any(|component| live.color(component.color).is_none()),
-    }
-}
-
-/// Whether `symbol` itself names a color or a component symbol that is gone. A combined symbol's public components are symbols of their own: a color gone from one of them is pruned there, not here.
-pub(crate) fn symbol_dangles(
-    symbol: &Symbol,
-    symbols: &crate::symbols::SymbolSet,
-    live: &Live,
-) -> bool {
-    match symbol {
-        Symbol::CombinedArea(combined) => combined.components().any(|p| component_dangles(p, live)),
-        Symbol::CombinedLine(combined) => combined.components().any(|p| component_dangles(p, live)),
-        _ => any_gone(symbol.colors(symbols), live),
-    }
-}
-
-fn component_dangles<W: Copy + Into<SymbolId>, P: PrivatePart>(
-    part: &PublicOrPrivateSymbol<W, P>,
-    live: &Live,
-) -> bool {
-    match part {
-        PublicOrPrivateSymbol::Public(id) => live.symbol(*id).is_none(),
-        PublicOrPrivateSymbol::Private(private) => any_gone(private.colors(), live),
-    }
-}
-
-fn any_gone(colors: Vec<ColorId>, live: &Live) -> bool {
-    colors.iter().any(|color| !live.colors.contains(&color.0))
-}
-
 /// Drop every handle a value holds that no longer resolves.
+///
+/// `dangles` walks the same handles as `prune` without changing anything, so
+/// a caller can leave alone, and keep sharing, every value a prune would not
+/// change. Keep the two methods of each impl in step.
 pub(crate) trait Prune {
     fn prune(&mut self, live: &Live);
+
+    /// Whether [`Prune::prune`] would change this value.
+    fn dangles(&self, live: &Live) -> bool;
 }
 
 impl Prune for SymbolColor {
     fn prune(&mut self, live: &Live) {
-        if let Self::Color(id) = *self {
-            *self = match live.color(id) {
-                Some(id) => Self::Color(id),
-                None => Self::NoColor,
-            };
+        if self.dangles(live) {
+            *self = Self::NoColor;
         }
+    }
+
+    fn dangles(&self, live: &Live) -> bool {
+        self.id().is_some_and(|id| live.color(id).is_none())
     }
 }
 
@@ -96,6 +65,10 @@ impl<T: Prune> Prune for Option<T> {
             value.prune(live);
         }
     }
+
+    fn dangles(&self, live: &Live) -> bool {
+        self.as_ref().is_some_and(|value| value.dangles(live))
+    }
 }
 
 impl<T: Prune> Prune for Vec<T> {
@@ -104,24 +77,48 @@ impl<T: Prune> Prune for Vec<T> {
             value.prune(live);
         }
     }
+
+    fn dangles(&self, live: &Live) -> bool {
+        self.iter().any(|value| value.dangles(live))
+    }
 }
 
 impl<T: Prune> Prune for Box<T> {
     fn prune(&mut self, live: &Live) {
         (**self).prune(live);
     }
+
+    fn dangles(&self, live: &Live) -> bool {
+        (**self).dangles(live)
+    }
+}
+
+impl Prune for Color {
+    fn prune(&mut self, live: &Live) {
+        match self {
+            Self::SpotColor(_) => (),
+            Self::MixedColor(color) => color.prune(live),
+        }
+    }
+
+    fn dangles(&self, live: &Live) -> bool {
+        match self {
+            Self::SpotColor(_) => false,
+            Self::MixedColor(color) => color.dangles(live),
+        }
+    }
 }
 
 impl Prune for MixedColor {
     fn prune(&mut self, live: &Live) {
         self.components
-            .retain_mut(|component| match live.color(component.color) {
-                Some(color) => {
-                    component.color = color;
-                    true
-                }
-                None => false,
-            });
+            .retain(|component| live.color(component.color).is_some());
+    }
+
+    fn dangles(&self, live: &Live) -> bool {
+        self.components
+            .iter()
+            .any(|component| live.color(component.color).is_none())
     }
 }
 
@@ -131,6 +128,12 @@ impl Prune for PointSymbol {
         self.outer_color.prune(live);
         self.elements.prune(live);
     }
+
+    fn dangles(&self, live: &Live) -> bool {
+        self.inner_color.dangles(live)
+            || self.outer_color.dangles(live)
+            || self.elements.dangles(live)
+    }
 }
 
 impl Prune for Element {
@@ -139,6 +142,14 @@ impl Prune for Element {
             Self::Point { symbol, .. } => symbol.prune(live),
             Self::Line { symbol, .. } => symbol.prune(live),
             Self::Area { symbol, .. } => symbol.prune(live),
+        }
+    }
+
+    fn dangles(&self, live: &Live) -> bool {
+        match self {
+            Self::Point { symbol, .. } => symbol.dangles(live),
+            Self::Line { symbol, .. } => symbol.dangles(live),
+            Self::Area { symbol, .. } => symbol.dangles(live),
         }
     }
 }
@@ -156,9 +167,24 @@ impl Prune for LineSymbol {
             dash.dash_symbol.prune(live);
         }
     }
+
+    fn dangles(&self, live: &Live) -> bool {
+        self.color.dangles(live)
+            || self.border.dangles(live)
+            || self.start_symbol.dangles(live)
+            || self.end_symbol.dangles(live)
+            || self
+                .mid_symbol
+                .as_ref()
+                .is_some_and(|mid| mid.mid_symbol.dangles(live))
+            || self
+                .dash_symbol
+                .as_ref()
+                .is_some_and(|dash| dash.dash_symbol.dangles(live))
+    }
 }
 
-impl Prune for crate::symbols::BorderStyle {
+impl Prune for BorderStyle {
     fn prune(&mut self, live: &Live) {
         match self {
             Self::SymmetricBorder { both } => both.color.prune(live),
@@ -168,22 +194,40 @@ impl Prune for crate::symbols::BorderStyle {
             }
         }
     }
+
+    fn dangles(&self, live: &Live) -> bool {
+        match self {
+            Self::SymmetricBorder { both } => both.color.dangles(live),
+            Self::AsymmetricBorder { left, right } => {
+                left.color.dangles(live) || right.color.dangles(live)
+            }
+        }
+    }
 }
 
 impl Prune for AreaSymbol {
     fn prune(&mut self, live: &Live) {
         self.color.prune(live);
-        for pattern in &mut self.patterns {
-            pattern.prune(live);
-        }
+        self.patterns.prune(live);
+    }
+
+    fn dangles(&self, live: &Live) -> bool {
+        self.color.dangles(live) || self.patterns.dangles(live)
     }
 }
 
-impl Prune for crate::symbols::FillPattern {
+impl Prune for FillPattern {
     fn prune(&mut self, live: &Live) {
         match self {
             Self::LinePattern { line_color, .. } => line_color.prune(live),
             Self::PointPattern { point, .. } => point.prune(live),
+        }
+    }
+
+    fn dangles(&self, live: &Live) -> bool {
+        match self {
+            Self::LinePattern { line_color, .. } => line_color.dangles(live),
+            Self::PointPattern { point, .. } => point.dangles(live),
         }
     }
 }
@@ -195,12 +239,24 @@ impl Prune for TextSymbol {
             below.color.prune(live);
         }
         match &mut self.framing_mode {
-            Some(crate::symbols::FramingMode::LineFraming(framing)) => framing.color.prune(live),
-            Some(crate::symbols::FramingMode::ShadowFraming(framing)) => {
-                framing.color.prune(live);
-            }
-            Some(crate::symbols::FramingMode::NoFraming) | None => (),
+            Some(FramingMode::LineFraming(framing)) => framing.color.prune(live),
+            Some(FramingMode::ShadowFraming(framing)) => framing.color.prune(live),
+            Some(FramingMode::NoFraming) | None => (),
         }
+    }
+
+    fn dangles(&self, live: &Live) -> bool {
+        let framing = match &self.framing_mode {
+            Some(FramingMode::LineFraming(framing)) => framing.color.dangles(live),
+            Some(FramingMode::ShadowFraming(framing)) => framing.color.dangles(live),
+            Some(FramingMode::NoFraming) | None => false,
+        };
+        framing
+            || self.color.dangles(live)
+            || self
+                .line_below
+                .as_ref()
+                .is_some_and(|below| below.color.dangles(live))
     }
 }
 
@@ -211,9 +267,19 @@ impl Prune for AreaOrLineSymbol {
             Self::Line(symbol) => symbol.prune(live),
         }
     }
+
+    fn dangles(&self, live: &Live) -> bool {
+        match self {
+            Self::Area(symbol) => symbol.dangles(live),
+            Self::Line(symbol) => symbol.dangles(live),
+        }
+    }
 }
 
-impl Prune for CombinedAreaSymbol {
+/// A public component that is gone is dropped and a private one is pruned in
+/// place. A public component's own colors belong to that symbol, which is
+/// pruned on its own.
+impl<Id: Copy + Into<SymbolId>, Private: Prune> Prune for CombinedSymbol<Id, Private> {
     fn prune(&mut self, live: &Live) {
         self.retain_map_components(|part| match part {
             PublicOrPrivateSymbol::Public(id) => live.symbol(id).map(PublicOrPrivateSymbol::Public),
@@ -223,17 +289,12 @@ impl Prune for CombinedAreaSymbol {
             }
         });
     }
-}
 
-impl Prune for CombinedLineSymbol {
-    fn prune(&mut self, live: &Live) {
-        self.retain_map_components(|part| match part {
-            PublicOrPrivateSymbol::Public(id) => live.symbol(id).map(PublicOrPrivateSymbol::Public),
-            PublicOrPrivateSymbol::Private(mut symbol) => {
-                symbol.prune(live);
-                Some(PublicOrPrivateSymbol::Private(symbol))
-            }
-        });
+    fn dangles(&self, live: &Live) -> bool {
+        self.components().any(|part| match part {
+            PublicOrPrivateSymbol::Public(id) => live.symbol(*id).is_none(),
+            PublicOrPrivateSymbol::Private(symbol) => symbol.dangles(live),
+        })
     }
 }
 
@@ -248,28 +309,33 @@ impl Prune for Symbol {
             Self::CombinedLine(symbol) => symbol.prune(live),
         }
     }
-}
 
-impl Prune for MapObject {
-    fn prune(&mut self, live: &Live) {
-        fn rewrite<T: Copy + Into<SymbolId>>(slot: &mut Option<T>, live: &Live) {
-            *slot = slot.and_then(|id| live.symbol(id));
-        }
-
+    fn dangles(&self, live: &Live) -> bool {
         match self {
-            Self::Point(object) => rewrite(&mut object.symbol, live),
-            Self::Line(object) => rewrite(&mut object.symbol, live),
-            Self::Area(object) => rewrite(&mut object.symbol, live),
-            Self::Text(object) => rewrite(&mut object.symbol, live),
+            Self::Line(symbol) => symbol.dangles(live),
+            Self::Area(symbol) => symbol.dangles(live),
+            Self::Point(symbol) => symbol.dangles(live),
+            Self::Text(symbol) => symbol.dangles(live),
+            Self::CombinedArea(symbol) => symbol.dangles(live),
+            Self::CombinedLine(symbol) => symbol.dangles(live),
         }
     }
 }
 
-impl Prune for crate::colors::Color {
+impl Prune for MapObject {
     fn prune(&mut self, live: &Live) {
-        match self {
-            Self::SpotColor(_) => (),
-            Self::MixedColor(color) => color.prune(live),
+        if self.dangles(live) {
+            match self {
+                Self::Point(object) => object.symbol = None,
+                Self::Line(object) => object.symbol = None,
+                Self::Area(object) => object.symbol = None,
+                Self::Text(object) => object.symbol = None,
+            }
         }
+    }
+
+    fn dangles(&self, live: &Live) -> bool {
+        self.symbol()
+            .is_some_and(|symbol| live.symbol(symbol).is_none())
     }
 }

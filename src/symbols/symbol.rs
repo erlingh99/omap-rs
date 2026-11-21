@@ -184,15 +184,17 @@ impl Symbol {
     /// Takes the [`SymbolSet`] that owns the symbol, because a combined
     /// symbol's public components live in the set rather than in the symbol.
     /// A component no longer in the set contributes no colors.
-    pub fn colors(&self, symbol_set: &SymbolSet) -> Vec<ColorId> {
-        match self {
-            Self::Line(symbol) => symbol.colors(),
-            Self::Area(symbol) => symbol.colors(),
-            Self::Point(symbol) => symbol.colors(),
-            Self::Text(symbol) => symbol.colors(),
-            Self::CombinedArea(symbol) => symbol.colors(symbol_set),
-            Self::CombinedLine(symbol) => symbol.colors(symbol_set),
-        }
+    pub fn colors<'a>(&'a self, symbol_set: &'a SymbolSet) -> impl Iterator<Item = ColorId> {
+        // Boxed: a combined symbol's public components are symbols in turn.
+        let colors: Box<dyn Iterator<Item = ColorId> + 'a> = match self {
+            Self::Line(symbol) => Box::new(symbol.colors()),
+            Self::Area(symbol) => Box::new(symbol.colors()),
+            Self::Point(symbol) => Box::new(symbol.colors()),
+            Self::Text(symbol) => Box::new(symbol.colors()),
+            Self::CombinedArea(symbol) => Box::new(symbol.colors(symbol_set)),
+            Self::CombinedLine(symbol) => Box::new(symbol.colors(symbol_set)),
+        };
+        colors
     }
 
     impl_symbol_getter!(custom_icon -> Option<&str>, |s| s.custom_icon.as_deref());

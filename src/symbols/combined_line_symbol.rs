@@ -34,7 +34,7 @@ impl CombinedLineSymbol {
     ///
     /// Takes the [`SymbolSet`] that owns the public components. A component no
     /// longer in the set contributes no colors.
-    pub fn colors(&self, symbol_set: &SymbolSet) -> Vec<ColorId> {
+    pub fn colors<'a>(&'a self, symbol_set: &'a SymbolSet) -> impl Iterator<Item = ColorId> {
         self.component_colors(symbol_set)
     }
 }

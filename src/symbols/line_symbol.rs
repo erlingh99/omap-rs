@@ -148,45 +148,27 @@ impl LineSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<ColorId> {
-        let mut colors = Vec::new();
-
-        if let SymbolColor::Color(id) = &self.color {
-            colors.push(*id);
-        }
-
-        if let Some(border) = &self.border {
-            match border {
-                BorderStyle::SymmetricBorder { both } => {
-                    if let SymbolColor::Color(id) = &both.color {
-                        colors.push(*id);
-                    }
-                }
-                BorderStyle::AsymmetricBorder { left, right } => {
-                    if let SymbolColor::Color(id) = &left.color {
-                        colors.push(*id);
-                    }
-                    if let SymbolColor::Color(id) = &right.color {
-                        colors.push(*id);
-                    }
-                }
+    /// Every color used in this symbol definition, its borders' and point
+    /// symbols' included.
+    pub fn colors(&self) -> impl Iterator<Item = ColorId> {
+        let border = match &self.border {
+            Some(BorderStyle::SymmetricBorder { both }) => [both.color.id(), None],
+            Some(BorderStyle::AsymmetricBorder { left, right }) => {
+                [left.color.id(), right.color.id()]
             }
-        }
-
-        if let Some(start) = &self.start_symbol {
-            colors.extend(start.colors());
-        }
-        if let Some(dash) = &self.dash_symbol {
-            colors.extend(dash.dash_symbol.colors());
-        }
-        if let Some(mid) = &self.mid_symbol {
-            colors.extend(mid.mid_symbol.colors());
-        }
-        if let Some(end) = &self.end_symbol {
-            colors.extend(end.colors());
-        }
-
-        colors
+            None => [None, None],
+        };
+        let points = [
+            self.start_symbol.as_deref(),
+            self.dash_symbol.as_ref().map(|dash| &dash.dash_symbol),
+            self.mid_symbol.as_ref().map(|mid| &mid.mid_symbol),
+            self.end_symbol.as_deref(),
+        ];
+        self.color
+            .id()
+            .into_iter()
+            .chain(border.into_iter().flatten())
+            .chain(points.into_iter().flatten().flat_map(PointSymbol::colors))
     }
 }
 

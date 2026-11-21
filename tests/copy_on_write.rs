@@ -151,10 +151,11 @@ fn a_restored_object_comes_back_under_its_own_handle() {
     let ids = object_ids(&map);
     let part = first_part_mut(&mut map);
 
-    let removed = part.remove_object(ids[2]).expect("resolves");
+    let (id, index, removed) = part.remove_object(ids[2]).expect("resolves");
+    assert_eq!((id, index), (ids[2], 2));
     assert_eq!(part.index_of(ids[3]), Some(2));
 
-    part.restore_object(ids[2], removed, 0)
+    part.restore_object(ids[2], 0, removed)
         .expect("the handle is a tombstone");
 
     assert_eq!(part.index_of(ids[2]), Some(0));
@@ -169,13 +170,13 @@ fn restoring_an_object_is_refused_for_a_live_or_foreign_handle() {
     let part = first_part_mut(&mut map);
     let object = Arc::clone(part.object_arc(ids[0]).expect("resolves"));
 
-    assert!(part.restore_object(ids[0], Arc::clone(&object), 0).is_err());
+    assert!(part.restore_object(ids[0], 0, Arc::clone(&object)).is_err());
 
     let mut other = MapPart::new("other");
     let foreign = other.add_object(Arc::unwrap_or_clone(Arc::clone(&object)));
     let mut small = MapPart::new("small");
     assert!(
-        small.restore_object(foreign, object, 0).is_err(),
+        small.restore_object(foreign, 0, object).is_err(),
         "a handle this part never issued"
     );
     assert!(small.is_empty());
@@ -206,11 +207,12 @@ fn objects_of_a_restored_symbol_use_it_again() -> Result<()> {
     let before = written_objects_with(&map, code)?;
     assert!(before > 0);
 
-    let removed = map.symbols.remove(symbol).expect("resolves");
+    let (id, removed_index, removed) = map.symbols.remove(symbol).expect("resolves");
+    assert_eq!((id, removed_index), (symbol, index));
     assert_eq!(written_objects_with(&map, code)?, 0);
 
     map.symbols
-        .restore(symbol, removed, index)
+        .restore(id, removed_index, removed)
         .expect("the handle is a tombstone");
 
     assert!(map.symbols.get(symbol).is_some());
@@ -225,13 +227,14 @@ fn a_part_handle_follows_its_part_through_removals_and_restores() {
     let b = parts.push(MapPart::new("b"));
     let c = parts.push(MapPart::new("c"));
 
-    let removed = parts.remove_by_id(a).expect("resolves");
+    let (_, index, removed) = parts.remove(a).expect("resolves");
+    assert_eq!(index, 0);
     assert_eq!(parts.index_of(b), Some(0));
     assert_eq!(parts.get_by_id(c).map(|part| part.name.as_str()), Some("c"));
     assert!(parts.get_by_id(a).is_none());
 
     parts
-        .restore(a, removed, 2)
+        .restore(a, 2, removed)
         .expect("the handle is a tombstone");
 
     let names: Vec<_> = parts.iter().map(|part| part.name.as_str()).collect();
@@ -269,7 +272,7 @@ fn merging_parts_keeps_the_first_part_handle() {
 fn a_serde_round_trip_drops_tombstones_and_keeps_live_handles() {
     let mut map = from_path();
     let ids = object_ids(&map);
-    let removed = first_part_mut(&mut map)
+    let (_, _, removed) = first_part_mut(&mut map)
         .remove_object(ids[0])
         .expect("resolves");
 
@@ -281,7 +284,7 @@ fn a_serde_round_trip_drops_tombstones_and_keeps_live_handles() {
     }
     assert!(
         first_part_mut(&mut read)
-            .restore_object(ids[0], removed, 0)
+            .restore_object(ids[0], 0, removed)
             .is_err(),
         "a tombstone is not serialized"
     );
@@ -349,7 +352,7 @@ fn removing_a_symbols_objects_shares_them_and_restoring_puts_them_back_in_place(
     let before: Vec<ObjectId> = object_ids(&map);
     let copy = map.clone();
 
-    let removed = first_part_mut(&mut map).remove(symbol);
+    let removed = first_part_mut(&mut map).remove_by_symbol(symbol);
 
     assert!(!removed.is_empty());
     for (id, index, object) in &removed {
@@ -362,7 +365,7 @@ fn removing_a_symbols_objects_shares_them_and_restoring_puts_them_back_in_place(
     }
     for (id, index, object) in removed {
         first_part_mut(&mut map)
-            .restore_object(id, object, index)
+            .restore_object(id, index, object)
             .expect("a tombstone");
     }
     assert_eq!(object_ids(&map), before);
@@ -373,17 +376,20 @@ fn a_removed_symbol_or_color_comes_back_as_the_very_value_the_set_shared() {
     let mut map = from_path();
     let symbol = map.symbols.ids().next().expect("a symbol");
     let shared = Arc::clone(map.symbols.get_arc(symbol).expect("resolves"));
-    let removed = map.symbols.remove(symbol).expect("resolves");
+    let (_, _, removed) = map.symbols.remove(symbol).expect("resolves");
     assert!(Arc::ptr_eq(&removed, &shared));
 
     let (color, shared) = {
         let id = map.colors.ids().next().expect("a color");
         (id, Arc::clone(map.colors.get_arc(id).expect("resolves")))
     };
-    let (id, removed) = map.colors.remove_at(0).expect("a color");
+    let (id, priority, removed) = map.colors.remove_at(0).expect("a color");
+    assert_eq!(priority, 0);
     assert_eq!(id, color);
     assert!(Arc::ptr_eq(&removed, &shared));
-    map.colors.restore(id, removed, 0).expect("a tombstone");
+    map.colors
+        .restore(id, priority, removed)
+        .expect("a tombstone");
     assert!(Arc::ptr_eq(
         map.colors.get_arc(color).expect("back"),
         &shared
@@ -413,7 +419,7 @@ fn combined_of_public_parts(map: &Omap) -> Option<(SymbolId, SymbolId, omap::col
             _ => return None,
         };
         let part = *parts.first()?;
-        let color = *map.symbols.get(part)?.colors(&map.symbols).first()?;
+        let color = map.symbols.get(part)?.colors(&map.symbols).next()?;
         Some((id, part, color))
     })
 }
@@ -433,7 +439,7 @@ fn pruning_a_color_gone_from_a_public_part_leaves_the_combined_symbol_shared() {
             .get(part)
             .expect("resolves")
             .colors(&map.symbols)
-            .contains(&color)
+            .any(|used| used == color)
     );
 
     assert!(

@@ -7,7 +7,7 @@ use quick_xml::{
 };
 
 use super::{Symbol, SymbolKey};
-use crate::arena::Arena;
+use crate::arena::{Arena, removed_as};
 use crate::{
     Code, Error, OmapSection, Result,
     colors::ColorSet,
@@ -180,29 +180,32 @@ impl SymbolSet {
         CombinedLine
     );
 
-    /// Remove the [`Symbol`] the handle names, returning it as the set shared
-    /// it. The handle stays reserved for [`SymbolSet::restore`].
-    pub fn remove(&mut self, id: SymbolId) -> Option<Arc<Symbol>> {
-        self.symbols.remove(id.0)
+    /// Remove the [`Symbol`] the handle names. Comes back as
+    /// `(id, index, symbol)`, the arguments [`SymbolSet::restore`] takes to put
+    /// it back; the handle stays reserved until then.
+    pub fn remove(&mut self, id: SymbolId) -> Option<(SymbolId, usize, Arc<Symbol>)> {
+        self.symbols.remove(id.0).map(removed_as(SymbolId))
     }
 
-    /// Remove the first [`Symbol`] with the given [`Code`], returning its
-    /// handle, its index and the symbol, which [`SymbolSet::restore`] takes back.
+    /// Remove the [`Symbol`] at file index `index`. Comes back as
+    /// `(id, index, symbol)`, the arguments [`SymbolSet::restore`] takes to put
+    /// it back; the handle stays reserved until then.
+    pub fn remove_at(&mut self, index: usize) -> Option<(SymbolId, usize, Arc<Symbol>)> {
+        self.symbols.remove_at(index).map(removed_as(SymbolId))
+    }
+
+    /// Remove the first [`Symbol`] with the given [`Code`], as
+    /// [`SymbolSet::remove`] does.
     pub fn remove_by_code(&mut self, code: Code) -> Option<(SymbolId, usize, Arc<Symbol>)> {
         let index = self.values().position(|s| s.common().code == code)?;
-        self.remove_index(index)
+        self.remove_at(index)
     }
 
-    /// Remove the first [`Symbol`] with the given name, returning its handle,
-    /// its index and the symbol, which [`SymbolSet::restore`] takes back.
+    /// Remove the first [`Symbol`] with the given name, as
+    /// [`SymbolSet::remove`] does.
     pub fn remove_by_name(&mut self, name: &str) -> Option<(SymbolId, usize, Arc<Symbol>)> {
         let index = self.values().position(|s| s.common().name == name)?;
-        self.remove_index(index)
-    }
-
-    fn remove_index(&mut self, index: usize) -> Option<(SymbolId, usize, Arc<Symbol>)> {
-        let id = self.symbols.id_at(index)?;
-        Some((SymbolId(id), index, self.symbols.remove_at(index)?))
+        self.remove_at(index)
     }
 
     /// Put a removed symbol back under its own handle at file index `index`.
@@ -216,10 +219,10 @@ impl SymbolSet {
     pub fn restore(
         &mut self,
         id: SymbolId,
-        symbol: Arc<Symbol>,
         index: usize,
+        symbol: Arc<Symbol>,
     ) -> std::result::Result<(), Arc<Symbol>> {
-        self.symbols.restore(id.0, symbol, index)
+        self.symbols.restore(id.0, index, symbol)
     }
 
     /// The shared symbol behind a handle; a copy of this set holds the same
@@ -281,6 +284,15 @@ impl SymbolSet {
     /// Mutably iterate over the symbols in file order.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Symbol> {
         self.symbols.values_mut()
+    }
+
+    /// Mutably iterate over the symbols `matches`, copying only those out of
+    /// a shared set.
+    pub(crate) fn values_mut_where<F: Fn(&Symbol) -> bool>(
+        &mut self,
+        matches: F,
+    ) -> impl Iterator<Item = &mut Symbol> {
+        self.symbols.values_mut_where(matches)
     }
 
     /// Iterate over handles to every symbol, in file order.

@@ -306,3 +306,21 @@ where
 
     Ok((transformed_position, rotation, determinant.sqrt()))
 }
+
+/// One of two iterators over the same items, so `match` arms that build
+/// different iterators can still return one type.
+pub(crate) enum Either<L, R> {
+    Left(L),
+    Right(R),
+}
+
+impl<L: Iterator, R: Iterator<Item = L::Item>> Iterator for Either<L, R> {
+    type Item = L::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Left(iter) => iter.next(),
+            Self::Right(iter) => iter.next(),
+        }
+    }
+}
