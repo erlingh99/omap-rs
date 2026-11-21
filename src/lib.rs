@@ -24,6 +24,7 @@ pub mod templates;
 mod utils;
 /// View settings: zoom, grid, template visibility.
 pub mod view;
+#[cfg(feature = "xml")]
 pub mod xml;
 
 use std::fmt::Debug;

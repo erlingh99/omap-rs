@@ -49,6 +49,7 @@ impl MapObject {
         }
     }
 
+    #[cfg(feature = "xml")]
     pub(crate) fn geometry_is_empty(&self) -> bool {
         match self {
             Self::Line(object) => object.geometry_is_empty(),

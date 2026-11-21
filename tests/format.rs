@@ -1,5 +1,6 @@
 //! Choosing a file format by extension, and reading and writing through it.
 
+#![cfg(feature = "xml")]
 #![expect(
     clippy::expect_used,
     reason = "a test should fail loudly at the point it breaks"

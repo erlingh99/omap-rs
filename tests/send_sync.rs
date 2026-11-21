@@ -1,5 +1,7 @@
 //! Make sure that the `Omap` type and its components are `Send`, `Sync` and `Clone`.
 
+#![cfg(feature = "xml")]
+
 use omap::Omap;
 
 /// What a test returns: any error fails it.

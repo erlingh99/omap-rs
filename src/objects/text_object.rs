@@ -116,6 +116,7 @@ impl TextObject {
     }
 
     /// This object with the tags a file gave it.
+    #[cfg(feature = "xml")]
     pub(crate) fn with_tags(mut self, tags: HashMap<String, String>) -> Self {
         self.tags = (!tags.is_empty()).then(|| Box::new(tags));
         self

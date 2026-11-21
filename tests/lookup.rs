@@ -1,6 +1,8 @@
 //! Every lookup hands back a `SymbolRef`: the symbol for reading, the handle
 //! for storing, and narrowing through `TryFrom` or the `as_*` helpers.
 
+#![cfg(feature = "xml")]
+
 use omap::{
     Code, Omap,
     colors::{ColorId, ColorKind, MixedColorId, SpotColorId},

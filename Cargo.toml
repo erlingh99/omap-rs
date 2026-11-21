@@ -12,7 +12,7 @@ keywords = ["oomapper", "orienteering", "map", "mapping", "gis"]
 [dependencies]
 geo-types = "0.7"
 thiserror = "2"
-quick-xml = "0.42"
+quick-xml = { version = "0.42", optional = true }
 linestring2bezier = "0.8.0"
 slotmap = "1.1.1"
 
@@ -26,6 +26,12 @@ world_magnetic_model = { version = "0.4.0", optional = true }
 serde_json = "1"
 
 [features]
+default = ["xml"]
+
+# The OpenOrienteering Mapper XML format (`.omap`, `.xmap`), and the bundled
+# default maps, which are stored in it.
+xml = ["dep:quick-xml"]
+
 geo_ref = [
     "dep:proj-core",
     "dep:proj-wkt",
@@ -237,3 +243,11 @@ verbose_file_reads = "warn"
 wildcard_dependencies = "warn"
 wildcard_imports = "warn"
 zero_sized_map_values = "warn"
+
+[[example]]
+name = "default_write"
+required-features = ["xml"]
+
+[[example]]
+name = "from_path"
+required-features = ["xml"]

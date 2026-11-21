@@ -32,7 +32,10 @@ pub trait Format: Send + Sync {
     fn write(&self, map: &Omap, writer: &mut dyn Write) -> Result<(), Error>;
 }
 
-static FORMATS: &[&dyn Format] = &[&crate::xml::Xml];
+static FORMATS: &[&dyn Format] = &[
+    #[cfg(feature = "xml")]
+    &crate::xml::Xml,
+];
 
 /// Every format compiled into this build.
 pub fn all() -> &'static [&'static dyn Format] {
@@ -52,6 +55,7 @@ pub fn for_path(path: impl AsRef<Path>) -> Option<&'static dyn Format> {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// The `OpenOrienteering` Mapper XML format.
+    #[cfg(feature = "xml")]
     #[error(transparent)]
     Xml(crate::xml::Error),
     /// Reading or writing the file itself.

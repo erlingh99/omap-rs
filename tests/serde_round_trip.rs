@@ -4,6 +4,7 @@
 //! enough to still write the same `.omap` bytes, and that a handle taken
 //! beforehand still resolves against the restored map.
 
+#![cfg(feature = "xml")]
 #![cfg(feature = "serde")]
 
 use omap::Omap;

@@ -42,6 +42,7 @@ impl SpotColor {
 
     /// This color with the given modes, taken as they are: for a reader that
     /// has already made them consistent.
+    #[cfg(feature = "xml")]
     pub(crate) fn with_modes(mut self, cmyk_mode: CmykMode, rgb_mode: RgbMode) -> Self {
         self.cmyk_mode = cmyk_mode;
         self.rgb_mode = rgb_mode;
@@ -177,6 +178,7 @@ impl MixedColor {
 
     /// This color with the given modes, taken as they are: for a reader that
     /// has already made them consistent.
+    #[cfg(feature = "xml")]
     pub(crate) fn with_modes(mut self, cmyk_mode: CmykMode, rgb_mode: RgbMode) -> Self {
         self.cmyk_mode = cmyk_mode;
         self.rgb_mode = rgb_mode;

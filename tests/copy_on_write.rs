@@ -2,6 +2,8 @@
 //! original until one side changes them, and a removed item can be restored
 //! under its own handle.
 
+#![cfg(feature = "xml")]
+
 use std::sync::Arc;
 
 use omap::Omap;

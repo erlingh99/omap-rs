@@ -39,6 +39,7 @@ impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
         }
     }
 
+    #[cfg(feature = "xml")]
     pub(crate) fn from_parts(
         common: SymbolCommon,
         parts: Vec<PublicOrPrivateSymbol<Id, Private>>,
@@ -68,6 +69,7 @@ impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
 
     /// Point the public part at `position` at `id`. Does nothing if there is
     /// no public part there.
+    #[cfg(feature = "xml")]
     pub(crate) fn set_public(&mut self, position: usize, id: Id) {
         if let Some(PublicOrPrivateSymbol::Public(part)) = self.parts.get_mut(position) {
             *part = Some(id);

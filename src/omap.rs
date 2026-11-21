@@ -3,7 +3,7 @@ use std::io::{BufReader, BufWriter};
 use std::num::NonZeroU32;
 use std::path::Path;
 
-#[cfg(feature = "geo_ref")]
+#[cfg(all(feature = "geo_ref", feature = "xml"))]
 use crate::geo_referencing::CrsType;
 use crate::references::{Live, Reference, References as _};
 
@@ -21,17 +21,20 @@ use crate::{
     {Result, ValidationError},
 };
 
+#[cfg(feature = "xml")]
 const DEFAULT_ISOM_15000: &[u8] = include_bytes!("default_maps/isom_15000.omap");
+#[cfg(feature = "xml")]
 const DEFAULT_ISOM_10000: &[u8] = include_bytes!("default_maps/isom_10000.omap");
+#[cfg(feature = "xml")]
 const DEFAULT_ISSPROM_4000: &[u8] = include_bytes!("default_maps/issprom_4000.omap");
 
 /// The scale denominators the bundled default maps are drawn at.
 /// Unwrap on consts is compile time
-#[cfg(feature = "geo_ref")]
+#[cfg(all(feature = "geo_ref", feature = "xml"))]
 const SCALE_15_000: NonZeroU32 = NonZeroU32::new(15_000).unwrap();
-#[cfg(feature = "geo_ref")]
+#[cfg(all(feature = "geo_ref", feature = "xml"))]
 const SCALE_10_000: NonZeroU32 = NonZeroU32::new(10_000).unwrap();
-#[cfg(feature = "geo_ref")]
+#[cfg(all(feature = "geo_ref", feature = "xml"))]
 const SCALE_4_000: NonZeroU32 = NonZeroU32::new(4_000).unwrap();
 
 /// All objects are in map coordinates i.e given in mm of paper
@@ -72,7 +75,7 @@ impl Omap {
     ///
     /// Returns an error if georeferencing cannot be initialized or the
     /// embedded default map cannot be parsed.
-    #[cfg(feature = "geo_ref")]
+    #[cfg(all(feature = "geo_ref", feature = "xml"))]
     pub fn default_15_000_geo_referenced(
         projected_ref_point: Coord,
         crs: CrsType,
@@ -90,7 +93,7 @@ impl Omap {
     ///
     /// Returns an error if georeferencing cannot be initialized or the
     /// embedded default map cannot be parsed.
-    #[cfg(feature = "geo_ref")]
+    #[cfg(all(feature = "geo_ref", feature = "xml"))]
     pub fn default_10_000_geo_referenced(
         projected_ref_point: Coord,
         crs: CrsType,
@@ -108,7 +111,7 @@ impl Omap {
     ///
     /// Returns an error if georeferencing cannot be initialized or the
     /// embedded default map cannot be parsed.
-    #[cfg(feature = "geo_ref")]
+    #[cfg(all(feature = "geo_ref", feature = "xml"))]
     pub fn default_4_000_geo_referenced(
         projected_ref_point: Coord,
         crs: CrsType,
@@ -125,6 +128,7 @@ impl Omap {
     /// # Errors
     ///
     /// Returns an error if the embedded default map cannot be parsed.
+    #[cfg(feature = "xml")]
     pub fn default_15_000() -> crate::xml::Result<Self> {
         crate::xml::read(DEFAULT_ISOM_15000)
     }
@@ -134,6 +138,7 @@ impl Omap {
     /// # Errors
     ///
     /// Returns an error if the embedded default map cannot be parsed.
+    #[cfg(feature = "xml")]
     pub fn default_10_000() -> crate::xml::Result<Self> {
         crate::xml::read(DEFAULT_ISOM_10000)
     }
@@ -143,6 +148,7 @@ impl Omap {
     /// # Errors
     ///
     /// Returns an error if the embedded default map cannot be parsed.
+    #[cfg(feature = "xml")]
     pub fn default_4_000() -> crate::xml::Result<Self> {
         crate::xml::read(DEFAULT_ISSPROM_4000)
     }
@@ -383,7 +389,7 @@ fn format_for(path: &Path) -> std::result::Result<&'static dyn format::Format, f
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "xml"))]
 mod tests {
     use std::{fs, num::NonZeroU32};
 

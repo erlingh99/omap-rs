@@ -1,5 +1,7 @@
 //! Test that read - write - read does not change the map
 
+#![cfg(feature = "xml")]
+
 /// What a test returns: any error fails it.
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 

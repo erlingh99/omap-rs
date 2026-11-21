@@ -8,7 +8,7 @@ For writing new files you can either start with a completely empty map `Omap::ne
 Or you can start from an already existing file with `Omap::from_path`.
 
 ## File formats
-`Omap` is the map's domain model; a file format is one way to store it. `Omap::from_path` and `Omap::to_file` choose the format by the file's extension through `omap::format`, and `omap::format::all()` lists every format compiled in, for an application's open and save dialogs. The OpenOrienteering Mapper XML format (`.omap` and `.xmap`) is `omap::xml`, whose `read` and `write` also work on any reader or writer.
+`Omap` is the map's domain model; a file format is one way to store it. `Omap::from_path` and `Omap::to_file` choose the format by the file's extension through `omap::format`, and `omap::format::all()` lists every format compiled in, for an application's open and save dialogs. The OpenOrienteering Mapper XML format (`.omap` and `.xmap`) is `omap::xml`, whose `read` and `write` also work on any reader or writer. It is the default `xml` feature; an application that only uses the domain model, or only serde, can turn it off, which also removes the bundled `default_*` maps.
 
 ## Geo-referencing
 With the `geo_ref`-feature automatic geo-referencing with magnetic north and scale factor calculation is enabled and done with the `omap::geo_referencing::GeoRef::initialize` function. \

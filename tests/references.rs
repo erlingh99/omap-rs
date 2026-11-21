@@ -3,6 +3,8 @@
 //! something referred to it, a prune makes it pass, and a second prune
 //! changes nothing.
 
+#![cfg(feature = "xml")]
+
 use std::sync::Arc;
 
 use omap::{
