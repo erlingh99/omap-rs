@@ -16,14 +16,13 @@ use quick_xml::{
 
 use crate::{
     colors::ColorSet,
-    format_info::{OmapVersion, XmlDeclaration},
     geo_referencing::{GeoRef, MapTransform},
-    notes,
     objects::MapObject,
     parts::MapParts,
     symbols::SymbolSet,
     templates::Templates,
     view::View,
+    xml::format_info::{OmapVersion, XmlDeclaration},
     {Error, Result, ValidationError},
 };
 
@@ -212,9 +211,14 @@ impl Omap {
                 Event::Decl(dec) => XmlDeclaration::parse(dec)?,
                 Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
                     "map" => OmapVersion::parse(&bytes_start)?,
-                    "notes" => notes = notes::parse(&mut reader).unwrap_or_default(),
+                    "notes" => notes = crate::xml::read_text(&mut reader).unwrap_or_default(),
                     "georeferencing" => georef = Some(GeoRef::parse(&mut reader, &bytes_start)?),
-                    "colors" => colors = Some(ColorSet::parse(&mut reader, &bytes_start)?),
+                    "colors" => {
+                        colors = Some(crate::xml::colors::read_color_set(
+                            &mut reader,
+                            &bytes_start,
+                        )?);
+                    }
                     "symbols" => {
                         if let Some(colors) = &colors {
                             symbols = Some(SymbolSet::parse(&mut reader, &bytes_start, colors)?);
@@ -315,14 +319,14 @@ impl Omap {
         OmapVersion::write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
 
-        notes::write(self.notes.as_str(), &mut writer)?;
+        crate::xml::write_notes(self.notes.as_str(), &mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
 
         self.geo_referencing.write(&mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
 
         // write colors
-        self.colors.write(&mut writer)?;
+        crate::xml::colors::write_color_set(&self.colors, &mut writer)?;
         writer.get_mut().write_all(b"\n".as_slice())?;
         // write symbols
         self.symbols

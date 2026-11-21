@@ -1,15 +1,6 @@
-use quick_xml::{
-    Reader, Writer,
-    events::{BytesEnd, BytesStart, Event},
-};
+use super::{Cmyk, Color, ColorId, MixedColor, MixedColorId, Rgb, SpotColor, SpotColorId};
 
-use super::{
-    Cmyk, Color, ColorComponent, ColorId, MixedColor, MixedColorId, Rgb, SpotColor, SpotColorId,
-    color::ColorParseReturn,
-};
-
-use crate::utils::{UnitF64, try_get_attr_raw};
-use crate::{Collection, Entry, Error, OmapSection, Result};
+use crate::{Collection, Entry, Error, Result};
 
 /// The map's colors, in priority order.
 ///
@@ -98,97 +89,5 @@ impl Entry<'_, ColorId, Color> {
     /// Narrow to a mixed color handle, or `None` if this names a spot color.
     pub fn as_mixed(self) -> Option<MixedColorId> {
         MixedColorId::try_from(self).ok()
-    }
-}
-
-impl ColorSet {
-    pub(crate) fn parse<R: std::io::BufRead>(
-        reader: &mut Reader<R>,
-        element: &BytesStart<'_>,
-    ) -> Result<Self> {
-        let num_colors = try_get_attr_raw(element, "count")?.ok_or(Error::ColorError)?;
-        let mut colors_and_components = Vec::with_capacity(num_colors);
-
-        let mut buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buf)? {
-                Event::Start(bytes_start) => {
-                    if matches!(bytes_start.local_name().as_ref(), "color") {
-                        colors_and_components.push(Color::parse(reader, &bytes_start)?);
-                    }
-                }
-                Event::End(bytes_end) => {
-                    if matches!(bytes_end.local_name().as_ref(), "colors") {
-                        break;
-                    }
-                }
-                Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::ColorSet));
-                }
-                _ => (),
-            }
-        }
-
-        // Colors are pushed in priority order first so that a mixed color's
-        // components can be resolved by priority afterwards.
-        let mut pending = Vec::with_capacity(colors_and_components.len());
-        for color_parse_return in colors_and_components {
-            match color_parse_return {
-                ColorParseReturn::Spot { color, priority } => {
-                    pending.push((priority, Color::SpotColor(color), Vec::new()));
-                }
-                ColorParseReturn::Mix {
-                    color,
-                    priority,
-                    components,
-                } => pending.push((priority, Color::MixedColor(color), components)),
-            }
-        }
-        pending.sort_by_key(|(priority, _, _)| *priority);
-
-        let mut color_set = Self::with_capacity(pending.len());
-        let mut all_components = Vec::with_capacity(pending.len());
-        for (_, color, components) in pending {
-            let _id = color_set.push(color);
-            all_components.push(components);
-        }
-
-        for (position, components) in all_components.into_iter().enumerate() {
-            if components.is_empty() {
-                continue;
-            }
-            let resolved: Vec<ColorComponent> = components
-                .into_iter()
-                .filter_map(|(priority, factor)| {
-                    let priority = usize::try_from(priority).ok()?;
-                    let color = color_set.at(priority)?.as_spot()?;
-                    Some(ColorComponent {
-                        factor: UnitF64::clamped_from(factor),
-                        color,
-                    })
-                })
-                .collect();
-            if let Some(Color::MixedColor(color)) = color_set.at_mut(position) {
-                color.components = resolved;
-            }
-        }
-
-        Ok(color_set)
-    }
-
-    pub(crate) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        writer.write_event(Event::Start(
-            BytesStart::new("colors").with_attributes([("count", self.len().to_string().as_str())]),
-        ))?;
-        writer.get_mut().write_all(b"\n".as_slice())?;
-        for (priority, color) in self.values().enumerate() {
-            match color {
-                Color::SpotColor(color) => color.write(writer, priority)?,
-                Color::MixedColor(color) => color.write(writer, priority, self)?,
-            }
-            writer.get_mut().write_all(b"\n".as_slice())?;
-        }
-        writer.write_event(Event::End(BytesEnd::new("colors")))?;
-        Ok(())
     }
 }

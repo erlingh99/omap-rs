@@ -7,10 +7,8 @@
 pub mod collection;
 /// Color definitions: color set, spot colors, mixed colors, CMYK, RGB.
 pub mod colors;
-mod format_info;
 /// Coordinate-reference-system and projection helpers.
 pub mod geo_referencing;
-mod notes;
 /// Map objects: points, lines, areas, and text.
 pub mod objects;
 /// The top-level OMAP document type.
@@ -25,6 +23,8 @@ pub mod templates;
 mod utils;
 /// View settings: zoom, grid, template visibility.
 pub mod view;
+/// The OpenOrienteering Mapper XML format.
+pub mod xml;
 
 use std::{fmt::Debug, io::BufWriter};
 

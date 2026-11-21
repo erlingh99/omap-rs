@@ -1,3 +1,5 @@
+//! The XML declaration and the root `<map>` element's version.
+
 use std::str::FromStr;
 
 use quick_xml::{

@@ -11,10 +11,6 @@ pub(crate) use transformable::try_transform_all;
 
 #[cfg(feature = "geo_ref")]
 use proj_core::CrsDef;
-use quick_xml::{
-    Writer,
-    events::{BytesEnd, BytesStart, BytesText, Event},
-};
 
 use crate::Error;
 use crate::Result;
@@ -157,57 +153,6 @@ impl CrsType {
                 }
             }
         }
-    }
-
-    pub(crate) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        let (id, proj_str, parameter) = match &self {
-            Self::Local => {
-                writer.write_event(Event::Start(
-                    BytesStart::new("projected_crs").with_attributes([("id", "Local")]),
-                ))?;
-                return Ok(());
-            }
-            Self::Epsg(code) => ("EPSG", format!("+init=epsg:{code}"), format!("{code}")),
-            Self::Proj4(proj_string) => ("PROJ.4", proj_string.clone(), proj_string.clone()),
-            Self::GaussKrueger(code) => {
-                let lon = 3 * (code.get() as u16);
-                let x = 500_000 + (code.get() as u32 * 1_000_000);
-                (
-                    "Gauss-Krueger, datum: Potsdam",
-                    format!(
-                        "+proj=tmerc +lat_0=0 +lon_0={lon} +k=1.000000 +x_0={x} +y_0=0 +ellps=bessel +datum=potsdam +units=m +no_defs"
-                    ),
-                    format!("{}", code.get()),
-                )
-            }
-            Self::Utm(code) => {
-                let (proj_str, param_str) = if code.get() < 0 {
-                    (
-                        format!("+proj=utm +datum=WGS84 +zone={} +south", code.get().abs()),
-                        format!("{} S", code.get().abs()),
-                    )
-                } else {
-                    (
-                        format!("+proj=utm +datum=WGS84 +zone={}", code.get().abs()),
-                        format!("{} N", code.get().abs()),
-                    )
-                };
-                ("UTM", proj_str, param_str)
-            }
-        };
-        writer.write_event(Event::Start(
-            BytesStart::new("projected_crs").with_attributes([("id", id)]),
-        ))?;
-        writer.write_event(Event::Start(
-            BytesStart::new("spec").with_attributes([("language", "PROJ.4")]),
-        ))?;
-        writer.write_event(Event::Text(BytesText::new(&proj_str)))?;
-        writer.write_event(Event::End(BytesEnd::new("spec")))?;
-        writer.write_event(Event::Start(BytesStart::new("parameter")))?;
-        writer.write_event(Event::Text(BytesText::new(&parameter)))?;
-        writer.write_event(Event::End(BytesEnd::new("parameter")))?;
-
-        Ok(())
     }
 }
 
