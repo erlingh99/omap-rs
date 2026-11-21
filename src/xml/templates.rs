@@ -66,7 +66,7 @@ impl TemplateEntry {
 }
 
 impl Templates {
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         event: &BytesStart<'_>,
     ) -> Result<Self> {
@@ -110,7 +110,7 @@ impl Templates {
         })
     }
 
-    pub(crate) fn write<W: std::io::Write>(
+    pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
     ) -> Result<Vec<TemplateVisibility>> {
@@ -183,7 +183,7 @@ impl OgrTemplate {
 }
 
 impl TemplateTransformations {
-    pub(crate) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+    pub(in crate::xml) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
         let mut start = BytesStart::new("transformations");
         match self.adjustment {
             AdjustmentState::Adjusted => start.push_attribute(("adjusted", "true")),
@@ -217,7 +217,7 @@ impl TemplateTransformations {
 }
 
 impl Template {
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         bs: &BytesStart<'_>,
     ) -> Result<Self> {
@@ -303,7 +303,7 @@ impl Template {
         Ok(template)
     }
 
-    pub(crate) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+    pub(in crate::xml) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
         let common = self.common();
 
         let mut start = BytesStart::new("template").with_attributes([
@@ -340,7 +340,7 @@ impl Template {
 }
 
 impl TemplateTransformations {
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         bs: &BytesStart<'_>,
     ) -> Result<Self> {
@@ -425,7 +425,7 @@ impl TemplateTransformations {
 }
 
 impl TemplateTransform {
-    pub(crate) fn parse(bs: &BytesStart<'_>) -> Self {
+    pub(in crate::xml) fn parse(bs: &BytesStart<'_>) -> Self {
         let mut t = Self::default();
         let mut pos = Coord::default();
         for attr in bs.attributes().filter_map(std::result::Result::ok) {
@@ -443,7 +443,7 @@ impl TemplateTransform {
         t
     }
 
-    pub(crate) fn write<W: std::io::Write>(
+    pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         role: &str,
@@ -466,7 +466,7 @@ impl TemplateTransform {
 }
 
 impl PassPoint {
-    pub(crate) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Self> {
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Self> {
         let mut src = None;
         let mut dest = None;
         let mut calc = None;
@@ -504,7 +504,7 @@ impl PassPoint {
         }
     }
 
-    pub(crate) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+    pub(in crate::xml) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
         writer
             .write_event(Event::Start(BytesStart::new("passpoint").with_attributes(
                 [("error", format!("{:.5}", self.error()).as_str())],
@@ -519,7 +519,7 @@ impl PassPoint {
 }
 
 impl Matrix3x3 {
-    pub(crate) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Self> {
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Self> {
         let mut values = [0.; 9];
         let mut i = 0;
         let mut buf = Vec::new();
@@ -540,7 +540,7 @@ impl Matrix3x3 {
         Ok(Self(values))
     }
 
-    pub(crate) fn write<W: std::io::Write>(
+    pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         role: &str,

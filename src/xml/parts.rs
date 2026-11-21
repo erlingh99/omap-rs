@@ -9,7 +9,7 @@ use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 
 impl MapPart {
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         element: &BytesStart<'_>,
         symbols: &SymbolSet,
@@ -51,7 +51,7 @@ impl MapPart {
         })
     }
 
-    pub(crate) fn write<W: std::io::Write>(
+    pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         symbols: &SymbolSet,
@@ -84,7 +84,7 @@ impl MapPart {
 }
 
 impl MapParts {
-    pub(crate) fn write<W: std::io::Write>(
+    pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         symbols: &SymbolSet,
@@ -104,7 +104,7 @@ impl MapParts {
         Ok(())
     }
 
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         symbols: &SymbolSet,
     ) -> Result<Self> {

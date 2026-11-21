@@ -15,18 +15,18 @@ use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
 use std::collections::HashMap;
 
-pub(crate) type FileCoord = (Coord<i32>, u8);
+pub(in crate::xml) type FileCoord = (Coord<i32>, u8);
 
 /// A coordinate starts a cubic Bézier segment.
-pub(crate) const COORD_FLAG_CURVE_START: u8 = 1;
+pub(in crate::xml) const COORD_FLAG_CURVE_START: u8 = 1;
 /// A coordinate closes the current path.
-pub(crate) const COORD_FLAG_CLOSE_POINT: u8 = 2;
+pub(in crate::xml) const COORD_FLAG_CLOSE_POINT: u8 = 2;
 /// A coordinate closes a polygon ring.
-pub(crate) const COORD_FLAG_HOLE_POINT: u8 = 16;
+pub(in crate::xml) const COORD_FLAG_HOLE_POINT: u8 = 16;
 /// A coordinate is a forced dash point.
-pub(crate) const COORD_FLAG_DASH_POINT: u8 = 32;
+pub(in crate::xml) const COORD_FLAG_DASH_POINT: u8 = 32;
 
-pub(crate) const COORD_FLAGS_RING_END: u8 = COORD_FLAG_CLOSE_POINT | COORD_FLAG_HOLE_POINT;
+pub(in crate::xml) const COORD_FLAGS_RING_END: u8 = COORD_FLAG_CLOSE_POINT | COORD_FLAG_HOLE_POINT;
 
 /// Build the exact mixed line/Bézier representation encoded by Mapper's raw
 /// coordinate flags.
@@ -34,7 +34,7 @@ pub(crate) const COORD_FLAGS_RING_END: u8 = COORD_FLAG_CLOSE_POINT | COORD_FLAG_
 /// A coordinate with bit 0 set starts a cubic Bézier whose two handles and end
 /// point are the following three coordinates. An end point may also start the
 /// next curve, so it is deliberately visited again in that case.
-pub(crate) fn bezier_from_file_coords(coords: &[FileCoord]) -> Option<BezierPath> {
+pub(in crate::xml) fn bezier_from_file_coords(coords: &[FileCoord]) -> Option<BezierPath> {
     let mut segments = Vec::new();
     let mut vertex_is_dash_point = coords
         .first()
@@ -87,7 +87,7 @@ pub(crate) fn bezier_from_file_coords(coords: &[FileCoord]) -> Option<BezierPath
     BezierPath::new(geometry, vertex_is_dash_point).ok()
 }
 
-pub(crate) fn file_coords_from_bezier(
+pub(in crate::xml) fn file_coords_from_bezier(
     path: &BezierPath,
     final_vertex_flags: u8,
 ) -> Result<Vec<FileCoord>> {
@@ -132,7 +132,7 @@ pub(crate) fn file_coords_from_bezier(
     Ok(coords)
 }
 
-pub(crate) fn parse_file_coords(text: &str, coords: &mut Vec<FileCoord>) -> Result<()> {
+pub(in crate::xml) fn parse_file_coords(text: &str, coords: &mut Vec<FileCoord>) -> Result<()> {
     for vertex in text.split_terminator(';') {
         let mut parts = vertex.split_whitespace();
         let x = parts
@@ -149,7 +149,7 @@ pub(crate) fn parse_file_coords(text: &str, coords: &mut Vec<FileCoord>) -> Resu
     Ok(())
 }
 
-pub(crate) fn parse_tags<R: std::io::BufRead>(
+pub(in crate::xml) fn parse_tags<R: std::io::BufRead>(
     reader: &mut Reader<R>,
 ) -> Result<HashMap<String, String>> {
     let mut buf = Vec::new();
@@ -178,7 +178,7 @@ pub(crate) fn parse_tags<R: std::io::BufRead>(
     Ok(tags)
 }
 
-pub(crate) fn write_tags<W: std::io::Write>(
+pub(in crate::xml) fn write_tags<W: std::io::Write>(
     writer: &mut Writer<W>,
     tags: &HashMap<String, String>,
 ) -> Result<()> {
@@ -200,7 +200,7 @@ pub(crate) fn write_tags<W: std::io::Write>(
 }
 
 /// Write file coordinates as the content of a `<coords>` element.
-pub(crate) fn write_file_coords<W: std::io::Write>(
+pub(in crate::xml) fn write_file_coords<W: std::io::Write>(
     writer: &mut Writer<W>,
     coords: &[FileCoord],
 ) -> Result<()> {

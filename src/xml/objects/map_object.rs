@@ -31,7 +31,7 @@ where
 }
 
 impl MapObject {
-    pub(crate) fn write<W: std::io::Write>(
+    pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         symbol_set: &SymbolSet,
@@ -51,7 +51,7 @@ impl MapObject {
 }
 
 impl MapObject {
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         bytes_start: &BytesStart<'_>,
         symbols: &SymbolSet,

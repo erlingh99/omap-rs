@@ -5,21 +5,21 @@
 //! laid out as XML, including how handles become the format's integer
 //! indices, lives here.
 
-pub(crate) mod attrs;
-pub(crate) mod colors;
+mod attrs;
+mod colors;
 mod error;
-pub(crate) mod format_info;
-pub(crate) mod georef;
-pub(crate) mod objects;
-pub(crate) mod parts;
-pub(crate) mod symbols;
-pub(crate) mod templates;
+mod format_info;
+mod georef;
+mod objects;
+mod parts;
+mod symbols;
+mod templates;
 mod text;
-pub(crate) mod units;
-pub(crate) mod view;
+mod units;
+mod view;
 
 pub use error::{CoordinateComponent, Error, ObjectKind, Result, Section};
-pub(crate) use text::{read_text, write_notes};
+pub(in crate::xml) use text::{read_text, write_notes};
 
 use crate::geo_referencing::GeoRef;
 use crate::parts::MapParts;

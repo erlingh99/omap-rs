@@ -10,7 +10,7 @@ use quick_xml::{Reader, Writer};
 use std::collections::HashMap;
 
 impl LineObject {
-    pub(crate) fn write<W: std::io::Write>(
+    pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         symbol_set: &SymbolSet,
@@ -21,7 +21,7 @@ impl LineObject {
     }
 
     /// Write a full object element for use inside a point symbol.
-    pub(crate) fn write_as_element<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+    pub(in crate::xml) fn write_as_element<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
         self.write_content(writer, None)
     }
 
@@ -56,7 +56,7 @@ impl LineObject {
     }
 
     /// Parse a line object through its closing `object` element.
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         symbol: Option<LinePathSymbolId>,
     ) -> Result<Self> {

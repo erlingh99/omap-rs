@@ -180,7 +180,7 @@ impl Grid {
 }
 
 impl View {
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         bs: &BytesStart<'_>,
         templates: &mut Templates,
@@ -283,7 +283,7 @@ impl View {
         Ok(())
     }
 
-    pub(crate) fn write<W: std::io::Write>(
+    pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         visibilities: Vec<TemplateVisibility>,

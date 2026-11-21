@@ -20,7 +20,7 @@ use quick_xml::{Reader, Writer};
 /// Where a `<symbol>` element sits in the file, which decides whether its
 /// opening tag carries an index and a code.
 #[derive(Clone, Copy)]
-pub(crate) enum SymbolPosition {
+pub(in crate::xml) enum SymbolPosition {
     /// A symbol in the set: index and code.
     Indexed(usize),
     /// A private sub-symbol of a combined symbol: code only.
@@ -31,16 +31,16 @@ pub(crate) enum SymbolPosition {
 
 /// A public part read from the file, to resolve once every symbol is parsed.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct UnresolvedPart {
+pub(in crate::xml) struct UnresolvedPart {
     /// The part's place among the combined symbol's parts.
-    pub(crate) position: usize,
+    pub(in crate::xml) position: usize,
     /// The file index of the symbol it names.
-    pub(crate) file_index: usize,
+    pub(in crate::xml) file_index: usize,
 }
 
 impl SymbolCommon {
     /// Write the `<symbol>` opening tag and the `<description>` that follows it.
-    pub(crate) fn write_open<W: std::io::Write>(
+    pub(in crate::xml) fn write_open<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         symbol_type: &str,
@@ -78,7 +78,7 @@ impl SymbolCommon {
     }
 
     /// Write the `<icon>` and close the `<symbol>`.
-    pub(crate) fn write_close<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+    pub(in crate::xml) fn write_close<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
         if let Some(icon) = &self.custom_icon {
             writer.write_event(Event::Empty(
                 BytesStart::new("icon").with_attributes([("src", icon.as_str())]),
@@ -90,7 +90,7 @@ impl SymbolCommon {
 }
 
 impl Symbol {
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         element: &BytesStart<'_>,
         color_set: &ColorSet,
@@ -143,7 +143,7 @@ impl Symbol {
         Ok((id, symbol, unresolved))
     }
 
-    pub(crate) fn write<W: std::io::Write>(
+    pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         symbol_set: &SymbolSet,
@@ -171,7 +171,7 @@ impl Symbol {
 impl SymbolSet {
     /// The integer the `.omap` format stores for a symbol reference. No symbol,
     /// or a removed one, is the format's `-1` sentinel.
-    pub(crate) fn file_index(&self, id: Option<impl Into<SymbolId>>) -> i32 {
+    pub(in crate::xml) fn file_index(&self, id: Option<impl Into<SymbolId>>) -> i32 {
         id.and_then(|id| self.position(id))
             .map_or(-1, |index| index as i32)
     }
@@ -180,7 +180,7 @@ impl SymbolSet {
         clippy::too_many_lines,
         reason = "symbol-set parsing also resolves combined-symbol references"
     )]
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         element: &BytesStart<'_>,
         colors: &ColorSet,
@@ -344,7 +344,7 @@ impl SymbolSet {
         Ok((symbol_set, symbol_set_name))
     }
 
-    pub(crate) fn write<W: std::io::Write>(
+    pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         colors: &ColorSet,
@@ -367,7 +367,7 @@ impl SymbolSet {
 impl SymbolKind {
     /// The `type` attribute the `.omap` format stores for this kind. The format
     /// has no combined line symbol, so both combined kinds write `16`.
-    pub(crate) fn type_id(self) -> &'static str {
+    pub(in crate::xml) fn type_id(self) -> &'static str {
         match self {
             Self::Point => "1",
             Self::Line => "2",

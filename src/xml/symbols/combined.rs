@@ -11,7 +11,7 @@ use crate::xml::{Error, Result, Section};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 
-pub(crate) trait PrivatePart {
+pub(in crate::xml) trait PrivatePart {
     fn write_part<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
@@ -43,7 +43,7 @@ impl PrivatePart for LineSymbol {
 }
 
 impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
-    pub(crate) fn write_body<W: std::io::Write>(
+    pub(in crate::xml) fn write_body<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         symbol_set: &SymbolSet,
@@ -81,7 +81,7 @@ impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
 }
 
 impl CombinedAreaSymbol {
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,
         attributes: SymbolCommon,

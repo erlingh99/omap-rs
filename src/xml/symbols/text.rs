@@ -16,7 +16,7 @@ impl TextSymbol {
         clippy::too_many_lines,
         reason = "text-symbol parsing maps a large file-format record"
     )]
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,
         attributes: SymbolCommon,
@@ -150,7 +150,7 @@ impl TextSymbol {
 
     /// Write the type-specific body, between the halves of the shared
     /// `<symbol>` frame written by [`Symbol::write`].
-    pub(crate) fn write_body<W: std::io::Write>(
+    pub(in crate::xml) fn write_body<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         color_set: &ColorSet,

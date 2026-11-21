@@ -10,7 +10,7 @@ use quick_xml::{Reader, Writer};
 use std::collections::HashMap;
 
 impl PointObject {
-    pub(crate) fn write<W: std::io::Write>(
+    pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         symbol_set: &SymbolSet,
@@ -26,7 +26,7 @@ impl PointObject {
     }
 
     /// Write a full `<object>...</object>` element - used for point symbol elements
-    pub(crate) fn write_as_element<W: std::io::Write>(
+    pub(in crate::xml) fn write_as_element<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         is_rotatable: bool,
@@ -73,7 +73,7 @@ impl PointObject {
 
     /// Parse a point object. The reader should be positioned right after
     /// the `<coords>` start event. Reads through `</object>`.
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         symbol: Option<PointSymbolId>,
         rotation: f64,

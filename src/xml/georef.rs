@@ -9,7 +9,7 @@ use quick_xml::{Reader, Writer};
 use std::str::FromStr as _;
 
 impl GeoRef {
-    pub(crate) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+    pub(in crate::xml) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
         let mut bytes_start = BytesStart::new("georeferencing")
             .with_attributes([("scale", self.scale_denominator.to_string().as_str())]);
         if self.combined_scale_factor() != 1. {
@@ -77,7 +77,7 @@ impl GeoRef {
         Ok(())
     }
 
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         event: &BytesStart<'_>,
     ) -> Result<Self> {
@@ -253,7 +253,7 @@ fn get_projected_crs_spec<R: std::io::BufRead>(
 }
 
 impl CrsType {
-    pub(crate) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
+    pub(in crate::xml) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
         let (id, proj_str, parameter) = match &self {
             Self::Local => {
                 writer.write_event(Event::Start(

@@ -117,7 +117,7 @@ impl LineSymbol {
         clippy::too_many_lines,
         reason = "line-symbol parsing maps a large file-format record"
     )]
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,
         attributes: SymbolCommon,
@@ -375,7 +375,7 @@ impl LineSymbol {
     /// Write this symbol on its own, for the sub-symbol positions that
     /// [`Symbol::write`] does not reach: private parts of a combined symbol,
     /// and point-symbol elements.
-    pub(crate) fn write<W: std::io::Write>(
+    pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         color_set: &ColorSet,
@@ -393,7 +393,7 @@ impl LineSymbol {
         clippy::too_many_lines,
         reason = "line-symbol serialization maps a large file-format record"
     )]
-    pub(crate) fn write_body<W: std::io::Write>(
+    pub(in crate::xml) fn write_body<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         color_set: &ColorSet,

@@ -40,7 +40,7 @@ impl FromStr for VerticalAlign {
 }
 
 impl TextObject {
-    pub(crate) fn write<W: std::io::Write>(
+    pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         symbol_set: &SymbolSet,
@@ -106,7 +106,7 @@ impl TextObject {
 
     /// Parse a text object. The reader should be positioned right after
     /// the `<object>` start event. Reads through `</object>`.
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         symbol: Option<TextSymbolId>,
         h_align: HorizontalAlign,

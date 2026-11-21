@@ -150,7 +150,7 @@ impl Element {
 }
 
 impl PointSymbol {
-    pub(crate) fn parse<R: std::io::BufRead>(
+    pub(in crate::xml) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,
         mut common: SymbolCommon,
@@ -214,7 +214,7 @@ impl PointSymbol {
     /// Write this symbol on its own, for the sub-symbol positions that
     /// [`Symbol::write`] does not reach: private parts of a combined symbol,
     /// and point-symbol elements.
-    pub(crate) fn write<W: std::io::Write>(
+    pub(in crate::xml) fn write<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         color_set: &ColorSet,
@@ -228,7 +228,7 @@ impl PointSymbol {
 
     /// Write the type-specific body, between the halves of the shared
     /// `<symbol>` frame written by [`Symbol::write`].
-    pub(crate) fn write_body<W: std::io::Write>(
+    pub(in crate::xml) fn write_body<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
         color_set: &ColorSet,
