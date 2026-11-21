@@ -4,7 +4,7 @@ use std::sync::Arc;
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 
-use crate::arena::Arena;
+use crate::arena::{Arena, removed_as};
 use crate::objects::{MapObject, ObjectId, ObjectKey};
 use crate::symbols::{SymbolId, SymbolSet};
 use crate::utils::try_get_attr;
@@ -42,21 +42,20 @@ impl MapPart {
         ObjectId(self.objects.push(object.into()))
     }
 
-    /// Moves every object of `other` to the end of this part, under new handles.
-    pub(super) fn merge(&mut self, other: Self) {
-        for object in other.objects.into_values() {
-            let _key = self.objects.push_arc(object);
-        }
+    /// Adds every object of `other` to the end of this part, under new
+    /// handles, sharing them with `other`.
+    pub(super) fn merge(&mut self, other: &Self) {
+        self.objects.extend_shared(&other.objects);
     }
 
-    /// Remove every object drawn with `key` from this part. Each comes back
-    /// with its handle and the index it had, in file order:
-    /// [`MapPart::restore_object`] on each in that order puts them all back.
-    pub fn remove(&mut self, key: SymbolId) -> Vec<(ObjectId, usize, Arc<MapObject>)> {
+    /// Remove every object drawn with `key` from this part. Each comes back as
+    /// `(id, index, object)`, in file order: [`MapPart::restore_object`] on
+    /// each in that order puts them all back.
+    pub fn remove_by_symbol(&mut self, key: SymbolId) -> Vec<(ObjectId, usize, Arc<MapObject>)> {
         self.objects
             .remove_where(|object| object.symbol() == Some(key))
             .into_iter()
-            .map(|(id, index, object)| (ObjectId(id), index, object))
+            .map(removed_as(ObjectId))
             .collect()
     }
 
@@ -71,6 +70,15 @@ impl MapPart {
     pub fn objects_by_symbol_mut(&mut self, key: SymbolId) -> impl Iterator<Item = &mut MapObject> {
         self.objects
             .values_mut_where(move |mo| mo.symbol() == Some(key))
+    }
+
+    /// Mutably iterate over the objects `matches`, copying only those out of
+    /// a shared part.
+    pub(crate) fn objects_mut_where<F: Fn(&MapObject) -> bool>(
+        &mut self,
+        matches: F,
+    ) -> impl Iterator<Item = &mut MapObject> {
+        self.objects.values_mut_where(matches)
     }
 
     /// Get the number of distinct symbols with objects in this part.
@@ -150,10 +158,17 @@ impl MapPart {
         self.objects.position(id.0)
     }
 
-    /// Remove the object `id` names. The handle stays reserved for
-    /// [`MapPart::restore_object`].
-    pub fn remove_object(&mut self, id: ObjectId) -> Option<Arc<MapObject>> {
-        self.objects.remove(id.0)
+    /// Remove the object `id` names. Comes back as `(id, index, object)`, the
+    /// arguments [`MapPart::restore_object`] takes to put it back; the handle
+    /// stays reserved until then.
+    pub fn remove_object(&mut self, id: ObjectId) -> Option<(ObjectId, usize, Arc<MapObject>)> {
+        self.objects.remove(id.0).map(removed_as(ObjectId))
+    }
+
+    /// Remove the object at `index` in file order, as
+    /// [`MapPart::remove_object`] does.
+    pub fn remove_object_at(&mut self, index: usize) -> Option<(ObjectId, usize, Arc<MapObject>)> {
+        self.objects.remove_at(index).map(removed_as(ObjectId))
     }
 
     /// Put a removed object back under its own handle at `index` in file order.
@@ -166,10 +181,10 @@ impl MapPart {
     pub fn restore_object(
         &mut self,
         id: ObjectId,
-        object: Arc<MapObject>,
         index: usize,
+        object: Arc<MapObject>,
     ) -> std::result::Result<(), Arc<MapObject>> {
-        self.objects.restore(id.0, object, index)
+        self.objects.restore(id.0, index, object)
     }
 
     /// Put `object` in place of the object `id` names, returning the one replaced.

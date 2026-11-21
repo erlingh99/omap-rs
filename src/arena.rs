@@ -17,6 +17,10 @@ use std::sync::Arc;
 
 use slotmap::{Key, SlotMap};
 
+/// A removed item as `(key, position, item)`: the arguments [`Arena::restore`]
+/// takes to put it back.
+pub(crate) type Removed<K, T> = (K, usize, Arc<T>);
+
 pub(crate) struct Arena<T, K: Key> {
     inner: Arc<Inner<T, K>>,
 }
@@ -32,15 +36,6 @@ impl<T, K: Key> Clone for Inner<T, K> {
         Self {
             slots: self.slots.clone(),
             items: self.items.clone(),
-        }
-    }
-}
-
-impl<T, K: Key> Default for Inner<T, K> {
-    fn default() -> Self {
-        Self {
-            slots: SlotMap::with_key(),
-            items: Vec::new(),
         }
     }
 }
@@ -154,13 +149,18 @@ impl<T, K: Key> Arena<T, K> {
         key
     }
 
-    /// Takes the item out, leaving `id` reserved for [`Self::restore`].
-    pub(crate) fn remove(&mut self, id: K) -> Option<Arc<T>> {
+    /// Takes the item `id` names out, leaving `id` reserved for
+    /// [`Self::restore`]. Comes back as `(id, position, item)`, the arguments
+    /// [`Self::restore`] takes to put it back.
+    pub(crate) fn remove(&mut self, id: K) -> Option<Removed<K, T>> {
         let position = self.position(id)?;
         self.remove_at(position)
     }
 
-    pub(crate) fn remove_at(&mut self, position: usize) -> Option<Arc<T>> {
+    /// Takes the item at `position` out, leaving its key reserved for
+    /// [`Self::restore`]. Comes back as `(id, position, item)`, the arguments
+    /// [`Self::restore`] takes to put it back.
+    pub(crate) fn remove_at(&mut self, position: usize) -> Option<Removed<K, T>> {
         if position >= self.len() {
             return None;
         }
@@ -170,7 +170,7 @@ impl<T, K: Key> Arena<T, K> {
             *slot = None;
         }
         inner.reindex(position);
-        Some(item)
+        Some((key, position, item))
     }
 
     /// Puts `value` back under the removed `id`, at `position` in the order.
@@ -180,7 +180,7 @@ impl<T, K: Key> Arena<T, K> {
     /// Hands `value` back if `id` does not name a removed slot of this arena,
     /// or `position > self.len()`. A key does not record which arena issued
     /// it, so a key from another arena naming a slot removed here is taken.
-    pub(crate) fn restore(&mut self, id: K, value: Arc<T>, position: usize) -> Result<(), Arc<T>> {
+    pub(crate) fn restore(&mut self, id: K, position: usize, value: Arc<T>) -> Result<(), Arc<T>> {
         let is_tombstone = matches!(self.inner.slots.get(id), Some(None));
         if !is_tombstone || position > self.len() {
             return Err(value);
@@ -241,26 +241,29 @@ impl<T, K: Key> Arena<T, K> {
             .map(|(key, item)| (*key, item.as_ref()))
     }
 
-    pub(crate) fn values(&self) -> impl Iterator<Item = &T> {
-        self.inner.items.iter().map(|(_, item)| item.as_ref())
+    pub(crate) fn values(&self) -> Values<'_, T, K> {
+        Values(self.inner.items.iter())
     }
 
-    /// The live items with their keys, in order.
-    pub(crate) fn entries(&self) -> std::slice::Iter<'_, (K, Arc<T>)> {
-        self.inner.items.iter()
-    }
-
-    /// The live items with their keys, in order, to copy on write one by one.
-    pub(crate) fn entries_mut(&mut self) -> std::slice::IterMut<'_, (K, Arc<T>)> {
-        self.inner_mut().items.iter_mut()
-    }
-
-    /// Every live item, in order.
-    pub(crate) fn values_mut(&mut self) -> impl Iterator<Item = &mut T>
+    /// Every live item, in order, each copied out of a shared arena as the
+    /// iterator reaches it.
+    pub(crate) fn values_mut(&mut self) -> ValuesMut<'_, T, K>
     where
         T: Clone,
     {
-        self.values_mut_where(|_| true)
+        ValuesMut(self.inner_mut().items.iter_mut())
+    }
+
+    /// Adds every item of `other` to the end, under new keys, sharing each
+    /// with `other`.
+    pub(crate) fn extend_shared(&mut self, other: &Self) {
+        let inner = self.inner_mut();
+        inner.items.reserve(other.len());
+        inner.slots.reserve(other.len());
+        for (_, item) in &other.inner.items {
+            let key = inner.slots.insert(Some(inner.items.len()));
+            inner.items.push((key, Arc::clone(item)));
+        }
     }
 
     /// Every live item `matches`, in order. Items it passes over are not
@@ -285,40 +288,104 @@ impl<T, K: Key> Arena<T, K> {
     /// Removes every item `matches`, in order, leaving their keys reserved
     /// for [`Self::restore`]. Each comes with the position it had before the
     /// removal: restoring them in the order returned puts each back there.
-    pub(crate) fn remove_where<F: Fn(&T) -> bool>(
-        &mut self,
-        matches: F,
-    ) -> Vec<(K, usize, Arc<T>)> {
+    pub(crate) fn remove_where<F: Fn(&T) -> bool>(&mut self, matches: F) -> Vec<Removed<K, T>> {
         let Some(first) = self.values().position(&matches) else {
             return Vec::new();
         };
         let inner = self.inner_mut();
-        let mut removed = Vec::new();
-        let mut kept = Vec::with_capacity(inner.items.len());
-        for (position, (key, item)) in std::mem::take(&mut inner.items).into_iter().enumerate() {
-            if position >= first && matches(&item) {
-                if let Some(slot) = inner.slots.get_mut(key) {
-                    *slot = None;
+        let mut position = first;
+        let mut positions = Vec::new();
+        let taken: Vec<_> = inner
+            .items
+            .extract_if(first.., |(_, item)| {
+                let hit = matches(item);
+                if hit {
+                    positions.push(position);
                 }
-                removed.push((key, position, item));
-            } else {
-                kept.push((key, item));
+                position += 1;
+                hit
+            })
+            .collect();
+        for (key, _) in &taken {
+            if let Some(slot) = inner.slots.get_mut(*key) {
+                *slot = None;
             }
         }
-        inner.items = kept;
         inner.reindex(first);
-        removed
+        taken
+            .into_iter()
+            .zip(positions)
+            .map(|((key, item), position)| (key, position, item))
+            .collect()
     }
 
     /// Every live item in order.
-    pub(crate) fn into_values(self) -> impl Iterator<Item = Arc<T>> {
-        let items = match Arc::try_unwrap(self.inner) {
-            Ok(inner) => inner.items,
-            Err(shared) => shared.items.clone(),
-        };
-        items.into_iter().map(|(_, item)| item)
+    pub(crate) fn into_values(self) -> IntoValues<T, K> {
+        IntoValues(Arc::unwrap_or_clone(self.inner).items.into_iter())
     }
 }
+
+/// Turns a removed `(key, position, item)` into the `(handle, position, item)`
+/// the public `remove` methods return, wrapping the key with `handle`.
+pub(crate) fn removed_as<K, Id, T>(
+    handle: impl Fn(K) -> Id,
+) -> impl Fn(Removed<K, T>) -> Removed<Id, T> {
+    move |(key, position, item)| (handle(key), position, item)
+}
+
+/// Implements the iterator traits for a newtype over a double-ended,
+/// exact-size iterator, passing each item of the inner iterator through `$map`.
+macro_rules! map_iterator {
+    ([$($generics:tt)*] $name:ty => $item:ty, $map:expr $(, where $($bounds:tt)*)?) => {
+        impl<$($generics)*> Iterator for $name $(where $($bounds)*)? {
+            type Item = $item;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                self.0.next().map($map)
+            }
+
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                self.0.size_hint()
+            }
+        }
+
+        impl<$($generics)*> DoubleEndedIterator for $name $(where $($bounds)*)? {
+            fn next_back(&mut self) -> Option<Self::Item> {
+                self.0.next_back().map($map)
+            }
+        }
+
+        impl<$($generics)*> ExactSizeIterator for $name $(where $($bounds)*)? {}
+
+        impl<$($generics)*> std::iter::FusedIterator for $name $(where $($bounds)*)? {}
+    };
+}
+pub(crate) use map_iterator;
+
+/// The live items of an [`Arena`], in order.
+#[derive(Debug)]
+pub(crate) struct Values<'a, T, K>(std::slice::Iter<'a, (K, Arc<T>)>);
+
+impl<T, K> Clone for Values<'_, T, K> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+map_iterator!(['a, T, K] Values<'a, T, K> => &'a T, |(_, item)| item.as_ref());
+
+/// The live items of an [`Arena`], in order, each copied out of a shared
+/// arena as the iterator reaches it.
+#[derive(Debug)]
+pub(crate) struct ValuesMut<'a, T, K>(std::slice::IterMut<'a, (K, Arc<T>)>);
+
+map_iterator!(['a, T, K] ValuesMut<'a, T, K> => &'a mut T, |(_, item)| Arc::make_mut(item), where T: Clone);
+
+/// The live items of a consumed [`Arena`], in order.
+#[derive(Debug)]
+pub(crate) struct IntoValues<T, K>(std::vec::IntoIter<(K, Arc<T>)>);
+
+map_iterator!([T, K] IntoValues<T, K> => Arc<T>, |(_, item)| item);
 
 impl<T, K: Key> FromIterator<T> for Arena<T, K> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
@@ -335,7 +402,7 @@ impl<T, K: Key> FromIterator<T> for Arena<T, K> {
 #[derive(serde::Serialize)]
 #[serde(bound(serialize = "T: serde::Serialize, K: serde::Serialize"))]
 struct ArenaReprRef<'a, T, K: Key> {
-    slots: SlotMap<K, Option<usize>>,
+    slots: std::borrow::Cow<'a, SlotMap<K, Option<usize>>>,
     items: &'a [(K, Arc<T>)],
 }
 
@@ -351,8 +418,15 @@ struct ArenaRepr<T, K: Key> {
 #[cfg(feature = "serde")]
 impl<T: serde::Serialize, K: Key + serde::Serialize> serde::Serialize for Arena<T, K> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut slots = self.inner.slots.clone();
-        slots.retain(|_, position| position.is_some());
+        use std::borrow::Cow;
+        // A slot without an item is a tombstone; only copy the slots to drop them.
+        let slots = if self.inner.slots.len() == self.inner.items.len() {
+            Cow::Borrowed(&self.inner.slots)
+        } else {
+            let mut slots = self.inner.slots.clone();
+            slots.retain(|_, position| position.is_some());
+            Cow::Owned(slots)
+        };
         ArenaReprRef {
             slots,
             items: &self.inner.items,
@@ -429,7 +503,8 @@ mod tests {
             .id_at(1)
             .expect("the arena has a handle at position 1");
 
-        assert_eq!(removed(arena.remove(b)).as_deref(), Some("b"));
+        let (id, position, value) = arena.remove(b).unwrap();
+        assert_eq!((id, position, value.as_str()), (b, 1, "b"));
         assert!(!arena.contains(b));
         assert_eq!(arena.get(b), None);
         assert_eq!(arena.position(b), None);
@@ -527,9 +602,9 @@ mod tests {
     fn restoring_brings_an_item_back_under_its_own_handle() {
         let mut arena = arena_of(&["a", "b", "c"]);
         let b = arena.id_at(1).unwrap();
-        let taken = arena.remove(b).unwrap();
+        let (_, _, taken) = arena.remove(b).unwrap();
 
-        arena.restore(b, taken, 0).unwrap();
+        arena.restore(b, 0, taken).unwrap();
 
         assert_eq!(order(&arena), ["b", "a", "c"]);
         assert_eq!(arena.get(b).unwrap(), "b");
@@ -543,7 +618,7 @@ mod tests {
         let value = std::sync::Arc::new("x".to_owned());
 
         assert!(
-            arena.restore(a, std::sync::Arc::clone(&value), 0).is_err(),
+            arena.restore(a, 0, std::sync::Arc::clone(&value)).is_err(),
             "a is live"
         );
 
@@ -551,13 +626,13 @@ mod tests {
         let foreign = other.id_at(3).unwrap();
         assert!(
             arena
-                .restore(foreign, std::sync::Arc::clone(&value), 0)
+                .restore(foreign, 0, std::sync::Arc::clone(&value))
                 .is_err(),
             "a slot this arena never had"
         );
 
         let _taken = other.remove(foreign);
-        assert!(other.restore(foreign, value, 4).is_err(), "past the end");
+        assert!(other.restore(foreign, 4, value).is_err(), "past the end");
         assert_eq!(order(&arena), ["a", "b"]);
         assert_eq!(order(&other), ["a", "b", "c"]);
     }
@@ -657,7 +732,7 @@ mod tests {
         assert_consistent(&arena);
 
         for (id, position, value) in taken {
-            arena.restore(id, value, position).unwrap();
+            arena.restore(id, position, value).unwrap();
         }
         assert_eq!(order(&arena), ["a1", "b1", "a2", "b2", "a3"]);
         assert_consistent(&arena);
@@ -712,7 +787,7 @@ mod tests {
         assert_eq!(arena.remove_at(0), None);
 
         let only = arena.push("a".to_owned());
-        assert_eq!(removed(arena.remove(only)).as_deref(), Some("a"));
+        assert_eq!(arena.remove(only).map(|(_, position, _)| position), Some(0));
         assert!(arena.is_empty());
         assert_eq!(arena.get(only), None);
     }
@@ -749,7 +824,7 @@ mod tests {
         let mut restored = restored;
         assert!(
             restored
-                .restore(doomed, std::sync::Arc::new("c".to_owned()), 0)
+                .restore(doomed, 0, std::sync::Arc::new("c".to_owned()))
                 .is_err(),
             "a tombstone is not serialized"
         );

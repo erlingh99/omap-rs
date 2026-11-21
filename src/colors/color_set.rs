@@ -9,7 +9,7 @@ use super::{
 };
 use std::sync::Arc;
 
-use crate::arena::Arena;
+use crate::arena::{Arena, removed_as};
 use crate::utils::{UnitF64, try_get_attr_raw};
 use crate::{Error, OmapSection, Result};
 
@@ -80,18 +80,18 @@ impl ColorSet {
         Ok(ColorId(self.0.insert(index, color.into())))
     }
 
-    /// Remove a color by its priority index, returning its handle and the
-    /// color as the set shared it. The handle stays reserved for
-    /// [`ColorSet::restore`].
-    pub fn remove_at(&mut self, priority: usize) -> Option<(ColorId, Arc<Color>)> {
-        let id = self.0.id_at(priority)?;
-        Some((ColorId(id), self.0.remove_at(priority)?))
+    /// Remove a color by its handle. Comes back as `(id, priority, color)`,
+    /// the arguments [`ColorSet::restore`] takes to put it back; the handle
+    /// stays reserved until then.
+    pub fn remove(&mut self, id: ColorId) -> Option<(ColorId, usize, Arc<Color>)> {
+        self.0.remove(id.0).map(removed_as(ColorId))
     }
 
-    /// Remove a color by its handle, returning it as the set shared it. The
-    /// handle stays reserved for [`ColorSet::restore`].
-    pub fn remove(&mut self, id: ColorId) -> Option<Arc<Color>> {
-        self.0.remove(id.0)
+    /// Remove a color by its priority index. Comes back as
+    /// `(id, priority, color)`, the arguments [`ColorSet::restore`] takes to
+    /// put it back; the handle stays reserved until then.
+    pub fn remove_at(&mut self, priority: usize) -> Option<(ColorId, usize, Arc<Color>)> {
+        self.0.remove_at(priority).map(removed_as(ColorId))
     }
 
     /// Put a removed color back under its own handle with priority `priority`.
@@ -105,10 +105,10 @@ impl ColorSet {
     pub fn restore(
         &mut self,
         id: ColorId,
-        color: Arc<Color>,
         priority: usize,
+        color: Arc<Color>,
     ) -> std::result::Result<(), Arc<Color>> {
-        self.0.restore(id.0, color, priority)
+        self.0.restore(id.0, priority, color)
     }
 
     /// The shared color behind a handle; a copy of this set holds the same
@@ -227,6 +227,15 @@ impl ColorSet {
     /// Mutably iterate over the colors in priority order.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Color> {
         self.0.values_mut()
+    }
+
+    /// Mutably iterate over the colors `matches`, copying only those out of a
+    /// shared set.
+    pub(crate) fn values_mut_where<F: Fn(&Color) -> bool>(
+        &mut self,
+        matches: F,
+    ) -> impl Iterator<Item = &mut Color> {
+        self.0.values_mut_where(matches)
     }
 
     /// Iterate over handles to every color, in priority order.

@@ -10,7 +10,7 @@ use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
     colors::{ColorId, ColorSet, SymbolColor},
     notes,
-    utils::{parse_attr, try_get_attr_raw},
+    utils::{Either, parse_attr, try_get_attr_raw},
 };
 
 /// A fill pattern applied to an area.
@@ -83,6 +83,14 @@ impl FromStr for ClippingOption {
 }
 
 impl FillPattern {
+    /// Every color this pattern draws with.
+    fn colors(&self) -> impl Iterator<Item = ColorId> {
+        match self {
+            Self::LinePattern { line_color, .. } => Either::Left(line_color.id().into_iter()),
+            Self::PointPattern { point, .. } => Either::Right(point.colors()),
+        }
+    }
+
     fn parse<R: std::io::BufRead>(
         element: &BytesStart<'_>,
         reader: &mut Reader<R>,
@@ -325,40 +333,12 @@ impl AreaSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<ColorId> {
-        let mut colors = Vec::new();
-        if let SymbolColor::Color(id) = &self.color {
-            colors.push(*id);
-        }
-
-        for pattern in &self.patterns {
-            match pattern {
-                FillPattern::LinePattern {
-                    angle: _,
-                    line_spacing: _,
-                    line_offset: _,
-                    line_color,
-                    line_width: _,
-                    rotatable: _,
-                } => {
-                    if let SymbolColor::Color(id) = line_color {
-                        colors.push(*id);
-                    }
-                }
-                FillPattern::PointPattern {
-                    clip_options: _,
-                    angle: _,
-                    line_spacing: _,
-                    line_offset: _,
-                    offset_along_line: _,
-                    point_distance: _,
-                    point,
-                    rotatable: _,
-                } => colors.extend(point.colors()),
-            }
-        }
-
-        colors
+    /// Every color used in this symbol definition, its patterns' included.
+    pub fn colors(&self) -> impl Iterator<Item = ColorId> {
+        self.color
+            .id()
+            .into_iter()
+            .chain(self.patterns.iter().flat_map(FillPattern::colors))
     }
 
     pub(super) fn parse<R: std::io::BufRead>(

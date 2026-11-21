@@ -11,10 +11,11 @@ use crate::{
     Code, Result,
     colors::{ColorId, ColorSet},
     symbols::{LinePathSymbolId, PathSymbolId, Symbol, SymbolId},
+    utils::Either,
 };
 
 pub(crate) trait PrivatePart {
-    fn colors(&self) -> Vec<ColorId>;
+    fn colors(&self) -> impl Iterator<Item = ColorId>;
 
     fn write_part<W: std::io::Write>(
         &self,
@@ -24,10 +25,10 @@ pub(crate) trait PrivatePart {
 }
 
 impl PrivatePart for AreaOrLineSymbol {
-    fn colors(&self) -> Vec<ColorId> {
+    fn colors(&self) -> impl Iterator<Item = ColorId> {
         match self {
-            Self::Area(symbol) => symbol.colors(),
-            Self::Line(symbol) => symbol.colors(),
+            Self::Area(symbol) => Either::Left(symbol.colors()),
+            Self::Line(symbol) => Either::Right(symbol.colors()),
         }
     }
 
@@ -44,7 +45,7 @@ impl PrivatePart for AreaOrLineSymbol {
 }
 
 impl PrivatePart for LineSymbol {
-    fn colors(&self) -> Vec<ColorId> {
+    fn colors(&self) -> impl Iterator<Item = ColorId> {
         Self::colors(self)
     }
 
@@ -188,22 +189,24 @@ impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
             .collect();
     }
 
-    pub(crate) fn component_colors(&self, symbol_set: &SymbolSet) -> Vec<ColorId>
+    pub(crate) fn component_colors<'a>(
+        &'a self,
+        symbol_set: &'a SymbolSet,
+    ) -> impl Iterator<Item = ColorId>
     where
         Private: PrivatePart,
+        Id: Copy + Into<SymbolId>,
     {
-        let mut colors = Vec::new();
-        for component in self.components() {
-            match component {
-                PublicOrPrivateSymbol::Public(id) => {
-                    if let Some(symbol) = symbol_set.get((*id).into()) {
-                        colors.extend(symbol.colors(symbol_set));
-                    }
-                }
-                PublicOrPrivateSymbol::Private(symbol) => colors.extend(symbol.colors()),
-            }
-        }
-        colors
+        self.components()
+            .flat_map(move |component| match component {
+                PublicOrPrivateSymbol::Public(id) => Either::Left(
+                    symbol_set
+                        .get((*id).into())
+                        .into_iter()
+                        .flat_map(move |symbol| symbol.symbol().colors(symbol_set)),
+                ),
+                PublicOrPrivateSymbol::Private(symbol) => Either::Right(symbol.colors()),
+            })
     }
 
     pub(super) fn write_body<W: std::io::Write>(

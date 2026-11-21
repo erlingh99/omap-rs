@@ -53,7 +53,6 @@ fn reference_graph(map: &Omap) -> ReferenceGraph {
         .map(|(index, symbol)| {
             let used = symbol
                 .colors(&map.symbols)
-                .into_iter()
                 .filter_map(|color| map.colors.priority_of(color))
                 .collect();
             (
