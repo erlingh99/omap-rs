@@ -13,6 +13,7 @@ keywords = ["oomapper", "orienteering", "map", "mapping", "gis"]
 geo-types = "0.7"
 thiserror = "2"
 quick-xml = { version = "0.42", optional = true }
+binrw = { version = "0.15.2", optional = true }
 linestring2bezier = "0.8.0"
 slotmap = "1.1.1"
 
@@ -31,6 +32,9 @@ default = ["xml"]
 # The OpenOrienteering Mapper XML format (`.omap`, `.xmap`), and the bundled
 # default maps, which are stored in it.
 xml = ["dep:quick-xml"]
+
+# The OCAD format (`.ocd`), versions 12, 13 and 2018.
+ocd = ["dep:binrw"]
 
 geo_ref = [
     "dep:proj-core",
@@ -109,7 +113,6 @@ flat_map_option = "warn"
 float_cmp_const = "warn"
 fn_params_excessive_bools = "warn"
 fn_to_numeric_cast_any = "warn"
-from_iter_instead_of_collect = "warn"
 get_unwrap = "warn"
 if_let_mutex = "warn"
 ignore_without_reason = "warn"

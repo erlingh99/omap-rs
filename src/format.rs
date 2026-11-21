@@ -35,6 +35,8 @@ pub trait Format: Send + Sync {
 static FORMATS: &[&dyn Format] = &[
     #[cfg(feature = "xml")]
     &crate::xml::Xml,
+    #[cfg(feature = "ocd")]
+    &crate::ocd::Ocd,
 ];
 
 /// Every format compiled into this build.
@@ -58,6 +60,10 @@ pub enum Error {
     #[cfg(feature = "xml")]
     #[error(transparent)]
     Xml(crate::xml::Error),
+    /// The OCAD format.
+    #[cfg(feature = "ocd")]
+    #[error(transparent)]
+    Ocd(crate::ocd::Error),
     /// Reading or writing the file itself.
     #[error(transparent)]
     Io(#[from] std::io::Error),

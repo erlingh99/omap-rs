@@ -15,7 +15,7 @@ fn the_xml_format_claims_omap_and_xmap_in_any_case() {
 
 #[test]
 fn no_format_claims_an_unknown_or_missing_extension() {
-    for path in ["map.ocd", "map.json", "map", ""] {
+    for path in ["map.dwg", "map.json", "map", ""] {
         assert!(format::for_path(path).is_none(), "{path}");
     }
 }
@@ -33,11 +33,11 @@ fn every_format_listed_is_one_for_path_finds() {
 #[test]
 fn an_unsupported_extension_is_reported_before_touching_the_disk() {
     let map = omap::xml::read(ISOM_15000).expect("the bundled map reads");
-    let path = std::env::temp_dir().join("omap-rs-unsupported-format-test.ocd");
+    let path = std::env::temp_dir().join("omap-rs-unsupported-format-test.dwg");
 
     assert!(matches!(
         map.to_file(&path),
-        Err(format::Error::UnsupportedExtension(extension)) if extension == "ocd"
+        Err(format::Error::UnsupportedExtension(extension)) if extension == "dwg"
     ));
     assert!(!path.exists(), "nothing is written");
     assert!(matches!(
