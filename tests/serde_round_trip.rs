@@ -81,14 +81,14 @@ fn reference_graph(map: &Omap) -> ReferenceGraph {
                 Symbol::CombinedArea(combined) => combined
                     .components()
                     .map(|part| match part {
-                        PublicOrPrivateSymbol::Public(id) => Some(SymbolId::from(*id)),
+                        PublicOrPrivateSymbol::Public(id) => id.map(SymbolId::from),
                         PublicOrPrivateSymbol::Private(_) => None,
                     })
                     .collect(),
                 Symbol::CombinedLine(combined) => combined
                     .components()
                     .map(|part| match part {
-                        PublicOrPrivateSymbol::Public(id) => Some(SymbolId::from(*id)),
+                        PublicOrPrivateSymbol::Public(id) => id.map(SymbolId::from),
                         PublicOrPrivateSymbol::Private(_) => None,
                     })
                     .collect(),

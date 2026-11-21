@@ -5,7 +5,7 @@ use std::path::Path;
 
 #[cfg(feature = "geo_ref")]
 use crate::geo_referencing::CrsType;
-use crate::symbols::{PublicOrPrivateSymbol, Symbol, SymbolId};
+use crate::references::{Live, Reference, References as _};
 
 use geo_types::Coord;
 
@@ -446,22 +446,18 @@ impl Omap {
 
     /// Drop every reference to a symbol or color that is no longer in its set.
     ///
-    /// A dangling symbol reference becomes `None`, which writes as the format's
-    /// `-1`; a dangling color reference becomes
-    /// [`crate::colors::SymbolColor::NoColor`]; and a dangling combined-symbol
-    /// component or mixed-color component is dropped.
+    /// Follows what Mapper does when a color or symbol is deleted: a dangling
+    /// color reference becomes [`crate::colors::SymbolColor::NoColor`], a
+    /// dangling symbol reference (an object's, or a combined symbol's public
+    /// part) becomes `None`, which writes as the format's `-1`, and a dangling
+    /// mixed-color component is removed.
     ///
     /// Handles you already hold stay valid across this call — only the map's own
-    /// references to removed values change. [`Omap::validate`] reports the
-    /// references this removes. Only values that hold a dangling reference are
-    /// changed, so a copy of the map keeps sharing the rest.
+    /// references to removed values change. Afterwards [`Omap::validate`]
+    /// passes. Only values that held a dangling reference are changed, so a
+    /// copy of the map keeps sharing the rest.
     pub fn prune_dangling_references(&mut self) {
-        use crate::prune::Prune as _;
-
-        let live = crate::prune::Live {
-            symbols: self.symbols.ids().map(|id| id.0).collect(),
-            colors: self.colors.ids().map(|id| id.0).collect(),
-        };
+        let live = Live::of(&self.colors, &self.symbols);
 
         for color in self.colors.values_mut_where(|color| color.dangles(&live)) {
             color.prune(&live);
@@ -483,53 +479,37 @@ impl Omap {
         }
     }
 
-    /// Validate references between objects, symbols, and colors.
+    /// Check that every reference to a color or symbol resolves in this map.
+    ///
+    /// A reference is reported on the value that holds it: a color a public
+    /// part of a combined symbol draws with is that part's, not the combined
+    /// symbol's.
     ///
     /// # Errors
     ///
-    /// Returns the first invalid reference with its map location, or an error
-    /// if a symbol cannot be borrowed during validation.
+    /// Returns the first dangling reference with the map location of the value
+    /// holding it. [`Omap::prune_dangling_references`] removes every one.
     pub fn validate(&self) -> std::result::Result<(), ValidationError> {
-        for (symbol_index, symbol) in self.symbols.values().enumerate() {
-            for color in symbol.colors(&self.symbols) {
-                if !self.colors.contains(color) {
-                    return Err(ValidationError::DanglingSymbolColor { symbol_index });
-                }
-            }
+        let live = Live::of(&self.colors, &self.symbols);
 
-            let components: Vec<Option<SymbolId>> = match symbol {
-                Symbol::CombinedArea(combined) => combined
-                    .components()
-                    .map(|part| match part {
-                        PublicOrPrivateSymbol::Public(id) => Some(SymbolId::from(*id)),
-                        PublicOrPrivateSymbol::Private(_) => None,
-                    })
-                    .collect(),
-                Symbol::CombinedLine(combined) => combined
-                    .components()
-                    .map(|part| match part {
-                        PublicOrPrivateSymbol::Public(id) => Some(SymbolId::from(*id)),
-                        PublicOrPrivateSymbol::Private(_) => None,
-                    })
-                    .collect(),
-                _ => continue,
-            };
-            for (component_index, component) in components.into_iter().enumerate() {
-                if let Some(component) = component
-                    && !self.symbols.contains(component)
-                {
-                    return Err(ValidationError::DanglingCombinedComponent {
-                        symbol_index,
-                        component_index,
-                    });
-                }
+        for (color_index, color) in self.colors.values().enumerate() {
+            if color.dangles(&live) {
+                return Err(ValidationError::DanglingColorComponent { color_index });
             }
         }
-
+        for (symbol_index, symbol) in self.symbols.values().enumerate() {
+            match symbol.first_dangling(&live) {
+                Some(Reference::Color(_)) => {
+                    return Err(ValidationError::DanglingSymbolColor { symbol_index });
+                }
+                Some(Reference::Symbol(_)) => {
+                    return Err(ValidationError::DanglingCombinedComponent { symbol_index });
+                }
+                None => (),
+            }
+        }
         for (object_index, object) in self.iter_all_objects().enumerate() {
-            if let Some(symbol) = object.symbol()
-                && !self.symbols.contains(symbol)
-            {
+            if object.dangles(&live) {
                 return Err(ValidationError::DanglingObjectSymbol { object_index });
             }
         }

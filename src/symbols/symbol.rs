@@ -1,3 +1,4 @@
+use super::combined_area_symbol::UnresolvedPart;
 use quick_xml::{
     Reader, Writer,
     events::{BytesEnd, BytesStart, BytesText, Event},
@@ -185,16 +186,7 @@ impl Symbol {
     /// symbol's public components live in the set rather than in the symbol.
     /// A component no longer in the set contributes no colors.
     pub fn colors<'a>(&'a self, symbol_set: &'a SymbolSet) -> impl Iterator<Item = ColorId> {
-        // Boxed: a combined symbol's public components are symbols in turn.
-        let colors: Box<dyn Iterator<Item = ColorId> + 'a> = match self {
-            Self::Line(symbol) => Box::new(symbol.colors()),
-            Self::Area(symbol) => Box::new(symbol.colors()),
-            Self::Point(symbol) => Box::new(symbol.colors()),
-            Self::Text(symbol) => Box::new(symbol.colors()),
-            Self::CombinedArea(symbol) => Box::new(symbol.colors(symbol_set)),
-            Self::CombinedLine(symbol) => Box::new(symbol.colors(symbol_set)),
-        };
-        colors
+        crate::references::colors_through(self, symbol_set)
     }
 
     impl_symbol_getter!(custom_icon -> Option<&str>, |s| s.custom_icon.as_deref());
@@ -233,7 +225,7 @@ impl Symbol {
         reader: &mut Reader<R>,
         element: &BytesStart<'_>,
         color_set: &ColorSet,
-    ) -> Result<(usize, Self, Vec<usize>)> {
+    ) -> Result<(usize, Self, Vec<UnresolvedPart>)> {
         let mut id = usize::MAX;
         let mut symbol_type = u8::MAX;
         let mut common = SymbolCommon::default();
@@ -261,7 +253,7 @@ impl Symbol {
         }
 
         // Components can only be resolved once every symbol is parsed.
-        let mut public_component_ids = Vec::new();
+        let mut unresolved = Vec::new();
         let symbol = match symbol_type {
             1 => Self::Point(Box::new(PointSymbol::parse(reader, color_set, common)?)),
             2 => Self::Line(Box::new(LineSymbol::parse(reader, color_set, common)?)),
@@ -269,8 +261,8 @@ impl Symbol {
             8 => Self::Text(Box::new(TextSymbol::parse(reader, color_set, common)?)),
             16 => {
                 // Reclassified as a line symbol later if its components say so.
-                let (symbol, component_ids) = CombinedAreaSymbol::parse(reader, color_set, common)?;
-                public_component_ids.extend(component_ids);
+                let (symbol, parts) = CombinedAreaSymbol::parse(reader, color_set, common)?;
+                unresolved = parts;
 
                 Self::CombinedArea(Box::new(symbol))
             }
@@ -279,7 +271,7 @@ impl Symbol {
             }
         };
 
-        Ok((id, symbol, public_component_ids))
+        Ok((id, symbol, unresolved))
     }
 
     pub(super) fn write<W: std::io::Write>(

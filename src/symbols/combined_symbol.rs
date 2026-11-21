@@ -9,14 +9,11 @@ use super::{
 };
 use crate::{
     Code, Result,
-    colors::{ColorId, ColorSet},
+    colors::ColorSet,
     symbols::{LinePathSymbolId, PathSymbolId, Symbol, SymbolId},
-    utils::Either,
 };
 
 pub(crate) trait PrivatePart {
-    fn colors(&self) -> impl Iterator<Item = ColorId>;
-
     fn write_part<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
@@ -25,13 +22,6 @@ pub(crate) trait PrivatePart {
 }
 
 impl PrivatePart for AreaOrLineSymbol {
-    fn colors(&self) -> impl Iterator<Item = ColorId> {
-        match self {
-            Self::Area(symbol) => Either::Left(symbol.colors()),
-            Self::Line(symbol) => Either::Right(symbol.colors()),
-        }
-    }
-
     fn write_part<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
@@ -45,10 +35,6 @@ impl PrivatePart for AreaOrLineSymbol {
 }
 
 impl PrivatePart for LineSymbol {
-    fn colors(&self) -> impl Iterator<Item = ColorId> {
-        Self::colors(self)
-    }
-
     fn write_part<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
@@ -105,12 +91,27 @@ impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
         self.parts.iter()
     }
 
-    /// Iterate over only the public components.
+    pub(crate) fn components_mut(
+        &mut self,
+    ) -> impl Iterator<Item = &mut PublicOrPrivateSymbol<Id, Private>> {
+        self.parts.iter_mut()
+    }
+
+    /// Iterate over the symbols the public components name, skipping parts
+    /// whose symbol is gone.
     pub fn public_components(&self) -> impl Iterator<Item = Id> {
         self.parts.iter().filter_map(|part| match part {
-            PublicOrPrivateSymbol::Public(id) => Some(*id),
+            PublicOrPrivateSymbol::Public(id) => *id,
             PublicOrPrivateSymbol::Private(_) => None,
         })
+    }
+
+    /// Point the public part at `position` at `id`. Does nothing if there is
+    /// no public part there.
+    pub(crate) fn set_public(&mut self, position: usize, id: Id) {
+        if let Some(PublicOrPrivateSymbol::Public(part)) = self.parts.get_mut(position) {
+            *part = Some(id);
+        }
     }
 
     /// Remove and return the symbol component at position `index` in the component vec.
@@ -179,36 +180,6 @@ impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
         })
     }
 
-    pub(crate) fn retain_map_components<F>(&mut self, mut f: F)
-    where
-        F: FnMut(PublicOrPrivateSymbol<Id, Private>) -> Option<PublicOrPrivateSymbol<Id, Private>>,
-    {
-        self.parts = std::mem::take(&mut self.parts)
-            .into_iter()
-            .filter_map(&mut f)
-            .collect();
-    }
-
-    pub(crate) fn component_colors<'a>(
-        &'a self,
-        symbol_set: &'a SymbolSet,
-    ) -> impl Iterator<Item = ColorId>
-    where
-        Private: PrivatePart,
-        Id: Copy + Into<SymbolId>,
-    {
-        self.components()
-            .flat_map(move |component| match component {
-                PublicOrPrivateSymbol::Public(id) => Either::Left(
-                    symbol_set
-                        .get((*id).into())
-                        .into_iter()
-                        .flat_map(move |symbol| symbol.symbol().colors(symbol_set)),
-                ),
-                PublicOrPrivateSymbol::Private(symbol) => Either::Right(symbol.colors()),
-            })
-    }
-
     pub(super) fn write_body<W: std::io::Write>(
         &self,
         writer: &mut Writer<W>,
@@ -225,7 +196,7 @@ impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
         for part in &self.parts {
             match part {
                 PublicOrPrivateSymbol::Public(id) => {
-                    let sym_index = symbol_set.file_index(Some(*id));
+                    let sym_index = symbol_set.file_index(*id);
                     writer.write_event(Event::Empty(
                         BytesStart::new("part")
                             .with_attributes([("symbol", sym_index.to_string().as_str())]),

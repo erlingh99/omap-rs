@@ -283,21 +283,7 @@ impl PointSymbol {
 
     /// Every color used in this symbol definition, its elements' included.
     pub fn colors(&self) -> impl Iterator<Item = ColorId> {
-        // Boxed: a point's elements hold symbols that hold points in turn.
-        let elements =
-            self.elements
-                .iter()
-                .flat_map(|element| -> Box<dyn Iterator<Item = ColorId> + '_> {
-                    match element {
-                        Element::Point { symbol, .. } => Box::new(symbol.colors()),
-                        Element::Line { symbol, .. } => Box::new(symbol.colors()),
-                        Element::Area { symbol, .. } => Box::new(symbol.colors()),
-                    }
-                });
-        [self.inner_color.id(), self.outer_color.id()]
-            .into_iter()
-            .flatten()
-            .chain(elements)
+        crate::references::own_colors(self)
     }
 
     pub(super) fn parse<R: std::io::BufRead>(

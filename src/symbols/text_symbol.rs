@@ -192,20 +192,7 @@ impl TextSymbol {
 
     /// Every color used in this symbol definition.
     pub fn colors(&self) -> impl Iterator<Item = ColorId> {
-        let framing = match &self.framing_mode {
-            Some(FramingMode::LineFraming(framing)) => framing.color.id(),
-            Some(FramingMode::ShadowFraming(framing)) => framing.color.id(),
-            Some(FramingMode::NoFraming) | None => None,
-        };
-        [
-            self.color.id(),
-            self.line_below
-                .as_ref()
-                .and_then(|underline| underline.color.id()),
-            framing,
-        ]
-        .into_iter()
-        .flatten()
+        crate::references::own_colors(self)
     }
 
     #[expect(

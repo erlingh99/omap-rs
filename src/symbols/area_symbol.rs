@@ -10,7 +10,7 @@ use crate::{
     Code, Error, NonNegativeF64, OmapSection, Result,
     colors::{ColorId, ColorSet, SymbolColor},
     notes,
-    utils::{Either, parse_attr, try_get_attr_raw},
+    utils::{parse_attr, try_get_attr_raw},
 };
 
 /// A fill pattern applied to an area.
@@ -83,14 +83,6 @@ impl FromStr for ClippingOption {
 }
 
 impl FillPattern {
-    /// Every color this pattern draws with.
-    fn colors(&self) -> impl Iterator<Item = ColorId> {
-        match self {
-            Self::LinePattern { line_color, .. } => Either::Left(line_color.id().into_iter()),
-            Self::PointPattern { point, .. } => Either::Right(point.colors()),
-        }
-    }
-
     fn parse<R: std::io::BufRead>(
         element: &BytesStart<'_>,
         reader: &mut Reader<R>,
@@ -335,10 +327,7 @@ impl AreaSymbol {
 
     /// Every color used in this symbol definition, its patterns' included.
     pub fn colors(&self) -> impl Iterator<Item = ColorId> {
-        self.color
-            .id()
-            .into_iter()
-            .chain(self.patterns.iter().flat_map(FillPattern::colors))
+        crate::references::own_colors(self)
     }
 
     pub(super) fn parse<R: std::io::BufRead>(

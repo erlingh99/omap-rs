@@ -9,6 +9,15 @@ use crate::{
     utils::{parse_attr, parse_attr_raw, try_get_attr_raw},
 };
 
+/// A public part read from the file, to resolve once every symbol is parsed.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct UnresolvedPart {
+    /// The part's place among the combined symbol's parts.
+    pub(crate) position: usize,
+    /// The file index of the symbol it names.
+    pub(crate) file_index: usize,
+}
+
 impl CombinedAreaSymbol {
     /// Get the minimum area (in paper dimensions mm²) among all area sub-symbols.
     ///
@@ -18,7 +27,7 @@ impl CombinedAreaSymbol {
         let mut min = f64::MAX;
         for part in self.components() {
             let area = match part {
-                PublicOrPrivateSymbol::Public(id) => match symbol_set
+                PublicOrPrivateSymbol::Public(Some(id)) => match symbol_set
                     .get(SymbolId::from(*id))
                     .map(|symbol| symbol.symbol())
                 {
@@ -26,6 +35,7 @@ impl CombinedAreaSymbol {
                     Some(Symbol::CombinedArea(symbol)) => symbol.minimum_area(symbol_set),
                     _ => 0.,
                 },
+                PublicOrPrivateSymbol::Public(None) => 0.,
                 PublicOrPrivateSymbol::Private(AreaOrLineSymbol::Area(symbol)) => {
                     symbol.minimum_area.get()
                 }
@@ -43,17 +53,17 @@ impl CombinedAreaSymbol {
     /// Takes the [`SymbolSet`] that owns the public components. A component no
     /// longer in the set contributes no colors.
     pub fn colors<'a>(&'a self, symbol_set: &'a SymbolSet) -> impl Iterator<Item = ColorId> {
-        self.component_colors(symbol_set)
+        crate::references::colors_through(self, symbol_set)
     }
 
     pub(super) fn parse<R: std::io::BufRead>(
         reader: &mut Reader<R>,
         color_set: &ColorSet,
         attributes: SymbolCommon,
-    ) -> Result<(Self, Vec<usize>)> {
+    ) -> Result<(Self, Vec<UnresolvedPart>)> {
         let mut common = attributes;
         let mut parts: Vec<PublicOrPrivateSymbol<PathSymbolId, AreaOrLineSymbol>> = Vec::new();
-        let mut public_component_ids: Vec<usize> = Vec::new();
+        let mut unresolved: Vec<UnresolvedPart> = Vec::new();
 
         let mut buf = Vec::new();
         loop {
@@ -70,10 +80,17 @@ impl CombinedAreaSymbol {
                             parts.push(PublicOrPrivateSymbol::Private(sym));
                         } else {
                             let symbol_index = try_get_attr_raw::<i32>(&e, "symbol")?;
-                            // Mapper writes -1 for unknown or empty public parts.
-                            if let Some(symbol_index) = symbol_index.filter(|&id| id >= 0) {
-                                public_component_ids.push(symbol_index as usize);
+                            // Mapper writes -1 for a part whose symbol is gone;
+                            // it stays an empty part in its place.
+                            if let Some(file_index) =
+                                symbol_index.and_then(|index| usize::try_from(index).ok())
+                            {
+                                unresolved.push(UnresolvedPart {
+                                    position: parts.len(),
+                                    file_index,
+                                });
                             }
+                            parts.push(PublicOrPrivateSymbol::Public(None));
                         }
                     }
                     "icon" => common.custom_icon = try_get_attr_raw(&e, "src")?,
@@ -89,7 +106,7 @@ impl CombinedAreaSymbol {
             }
         }
 
-        Ok((Self::from_parts(common, parts), public_component_ids))
+        Ok((Self::from_parts(common, parts), unresolved))
     }
 
     fn parse_private_part<R: std::io::BufRead>(

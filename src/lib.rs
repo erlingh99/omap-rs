@@ -16,7 +16,7 @@ pub mod objects;
 pub mod omap;
 /// Map parts (layers) and their contained objects.
 pub mod parts;
-mod prune;
+mod references;
 /// Symbol definitions: point, line, area, text, and combined symbols.
 pub mod symbols;
 /// Background-template support (images, tracks, GDAL/OGR layers).
@@ -386,21 +386,25 @@ pub enum Error {
 /// The reason an [`Omap`] cannot be safely serialized without losing references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum ValidationError {
+    /// A mixed color has a component whose spot color is not owned by the
+    /// map's color set.
+    #[error("color at index {color_index} mixes in a color not in the color set")]
+    DanglingColorComponent {
+        /// The index (priority) of the mixed color in its color set.
+        color_index: usize,
+    },
     /// A symbol references a color that is not owned by the map's color set.
     #[error("symbol at index {symbol_index} references a color not in the color set")]
     DanglingSymbolColor {
         /// The index of the symbol in its symbol set.
         symbol_index: usize,
     },
-    /// A public component of a combined symbol is not owned by the symbol set.
-    #[error(
-        "combined symbol at index {symbol_index} has component {component_index} not in the symbol set"
-    )]
+    /// A public part of a combined symbol names a symbol not owned by the
+    /// symbol set.
+    #[error("combined symbol at index {symbol_index} has a part not in the symbol set")]
     DanglingCombinedComponent {
         /// The index of the combined symbol in its symbol set.
         symbol_index: usize,
-        /// The index of the component within that combined symbol.
-        component_index: usize,
     },
     /// An object references a symbol that is not owned by the symbol set.
     #[error("object at index {object_index} references a symbol not in the symbol set")]

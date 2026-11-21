@@ -405,14 +405,14 @@ fn combined_of_public_parts(map: &Omap) -> Option<(SymbolId, SymbolId, omap::col
             Symbol::CombinedArea(c) => c
                 .components()
                 .map(|p| match p {
-                    PublicOrPrivateSymbol::Public(id) => Some((*id).into()),
+                    PublicOrPrivateSymbol::Public(id) => id.map(Into::into),
                     PublicOrPrivateSymbol::Private(_) => None,
                 })
                 .collect::<Option<_>>()?,
             Symbol::CombinedLine(c) => c
                 .components()
                 .map(|p| match p {
-                    PublicOrPrivateSymbol::Public(id) => Some((*id).into()),
+                    PublicOrPrivateSymbol::Public(id) => id.map(Into::into),
                     PublicOrPrivateSymbol::Private(_) => None,
                 })
                 .collect::<Option<_>>()?,
@@ -458,27 +458,61 @@ fn pruning_a_color_gone_from_a_public_part_leaves_the_combined_symbol_shared() {
     );
 }
 
+/// As in Mapper, a part whose symbol is gone stays in its place, empty, and
+/// is written as `-1`.
 #[test]
-fn pruning_drops_a_removed_public_part_from_its_combined_symbol() {
+fn pruning_empties_a_removed_public_part_in_place() {
+    use omap::symbols::{PublicOrPrivateSymbol, Symbol};
+
     let mut map = Omap::from_bytes(ISOM_15000).expect("bundled map parses");
     let (combined, part, _) =
         combined_of_public_parts(&map).expect("a combined symbol of public parts");
-    let parts = |map: &Omap| match &*map.symbols.get(combined).expect("resolves") {
-        omap::symbols::Symbol::CombinedArea(c) => c.components().count(),
-        omap::symbols::Symbol::CombinedLine(c) => c.components().count(),
-        _ => unreachable!("a combined symbol"),
+    // Whether each part names a symbol, in order.
+    let parts = |map: &Omap, combined: SymbolId| -> Vec<bool> {
+        match &*map.symbols.get(combined).expect("resolves") {
+            Symbol::CombinedArea(c) => c
+                .components()
+                .map(|p| !matches!(p, PublicOrPrivateSymbol::Public(None)))
+                .collect(),
+            Symbol::CombinedLine(c) => c
+                .components()
+                .map(|p| !matches!(p, PublicOrPrivateSymbol::Public(None)))
+                .collect(),
+            _ => unreachable!("a combined symbol"),
+        }
     };
-    let before = parts(&map);
+    let before = parts(&map, combined);
     let _removed = map.symbols.remove(part).expect("resolves");
-    assert!(map.validate().is_err());
+    assert_eq!(
+        map.validate(),
+        Err(omap::ValidationError::DanglingCombinedComponent {
+            symbol_index: map.symbols.index_of(combined).expect("resolves"),
+        })
+    );
     let copy = map.clone();
 
     map.prune_dangling_references();
 
     map.validate().expect("nothing dangles after pruning");
-    assert_eq!(parts(&map), before - 1);
+    let after = parts(&map, combined);
+    assert_eq!(after.len(), before.len(), "the part keeps its place");
+    assert!(!after[0], "the first part was the removed one");
     assert!(!Arc::ptr_eq(
         map.symbols.get_arc(combined).expect("resolves"),
         copy.symbols.get_arc(combined).expect("resolves"),
     ));
+
+    let mut bytes = Vec::new();
+    map.to_writer(&mut bytes).expect("writes");
+    let reread = Omap::from_bytes(&bytes).expect("reads back");
+    let reread_combined = reread
+        .symbols
+        .find_at(map.symbols.index_of(combined).expect("resolves"))
+        .expect("same place")
+        .id();
+    assert_eq!(
+        parts(&reread, reread_combined),
+        after,
+        "an empty part survives a round trip"
+    );
 }

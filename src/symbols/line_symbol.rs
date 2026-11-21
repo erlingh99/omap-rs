@@ -151,24 +151,7 @@ impl LineSymbol {
     /// Every color used in this symbol definition, its borders' and point
     /// symbols' included.
     pub fn colors(&self) -> impl Iterator<Item = ColorId> {
-        let border = match &self.border {
-            Some(BorderStyle::SymmetricBorder { both }) => [both.color.id(), None],
-            Some(BorderStyle::AsymmetricBorder { left, right }) => {
-                [left.color.id(), right.color.id()]
-            }
-            None => [None, None],
-        };
-        let points = [
-            self.start_symbol.as_deref(),
-            self.dash_symbol.as_ref().map(|dash| &dash.dash_symbol),
-            self.mid_symbol.as_ref().map(|mid| &mid.mid_symbol),
-            self.end_symbol.as_deref(),
-        ];
-        self.color
-            .id()
-            .into_iter()
-            .chain(border.into_iter().flatten())
-            .chain(points.into_iter().flatten().flat_map(PointSymbol::colors))
+        crate::references::own_colors(self)
     }
 }
 

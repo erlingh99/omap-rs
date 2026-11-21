@@ -1,3 +1,4 @@
+use super::combined_area_symbol::UnresolvedPart;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -341,7 +342,7 @@ impl SymbolSet {
         target: CombinedAreaSymbolId,
         component: PublicOrPrivateSymbol<PathSymbolId, AreaOrLineSymbol>,
     ) -> Result<()> {
-        if let PublicOrPrivateSymbol::Public(public) = &component
+        if let PublicOrPrivateSymbol::Public(Some(public)) = &component
             && self.would_cycle(target.into(), *public)
         {
             return Err(Error::CyclicSymbolDefinition);
@@ -364,7 +365,7 @@ impl SymbolSet {
         target: CombinedLineSymbolId,
         component: PublicOrPrivateSymbol<LinePathSymbolId, LineSymbol>,
     ) -> Result<()> {
-        if let PublicOrPrivateSymbol::Public(public) = &component
+        if let PublicOrPrivateSymbol::Public(Some(public)) = &component
             && self.would_cycle(target.into(), (*public).into())
         {
             return Err(Error::CyclicSymbolDefinition);
@@ -467,9 +468,9 @@ impl SymbolSet {
                 if has_private_area {
                     continue;
                 }
-                let has_area_public = components[i].iter().any(|&id| {
+                let has_area_public = components[i].iter().any(|part| {
                     matches!(
-                        symbols.get(id),
+                        symbols.get(part.file_index),
                         // Point and text is not allowed in combined symbol, that is treated later on
                         Some(Symbol::Area(_) | Symbol::Point(_) | Symbol::Text(_))
                     )
@@ -487,9 +488,9 @@ impl SymbolSet {
             let prev_len = candidate_indices.len();
             let current_candidates = candidate_indices.clone();
             candidate_indices.retain(|&idx| {
-                !components[idx].iter().any(|&id| {
-                    matches!(symbols.get(id), Some(Symbol::CombinedArea(_)))
-                        && !current_candidates.contains(&id)
+                !components[idx].iter().any(|part| {
+                    matches!(symbols.get(part.file_index), Some(Symbol::CombinedArea(_)))
+                        && !current_candidates.contains(&part.file_index)
                 })
             });
             if candidate_indices.len() == prev_len {
@@ -504,11 +505,16 @@ impl SymbolSet {
             let mut converted = CombinedLineSymbol::new(Code::default(), String::new());
             converted.common = std::mem::take(&mut combined.common);
             let part_count = combined.components().count();
+            // Public parts are still unresolved, so only their places carry over.
             for _ in 0..part_count {
-                if let Some(PublicOrPrivateSymbol::Private(AreaOrLineSymbol::Line(line))) =
-                    combined.remove_component(0)
-                {
-                    converted.push_component(PublicOrPrivateSymbol::Private(line));
+                match combined.remove_component(0) {
+                    Some(PublicOrPrivateSymbol::Private(AreaOrLineSymbol::Line(line))) => {
+                        converted.push_component(PublicOrPrivateSymbol::Private(line));
+                    }
+                    Some(PublicOrPrivateSymbol::Public(_)) => {
+                        converted.push_component(PublicOrPrivateSymbol::Public(None));
+                    }
+                    Some(PublicOrPrivateSymbol::Private(AreaOrLineSymbol::Area(_))) | None => {}
                 }
             }
             symbols[idx] = Symbol::CombinedLine(Box::new(converted));
@@ -520,8 +526,8 @@ impl SymbolSet {
         };
 
         // After conversion, so the handles name the correct types.
-        for (index, component_ids) in components.into_iter().enumerate() {
-            if component_ids.is_empty() {
+        for (index, parts) in components.into_iter().enumerate() {
+            if parts.is_empty() {
                 continue;
             }
             let Some(target) = symbol_set.find_at(index) else {
@@ -530,22 +536,38 @@ impl SymbolSet {
             let combined_area = target.as_combined_area();
             let combined_line = target.as_combined_line();
 
-            for id in component_ids {
+            for UnresolvedPart {
+                position,
+                file_index,
+            } in parts
+            {
                 let component = symbol_set
-                    .find_at(id)
-                    .ok_or(Error::SymbolSetIndexOutOfRange(id))?;
+                    .find_at(file_index)
+                    .ok_or(Error::SymbolSetIndexOutOfRange(file_index))?;
                 let kind = component.kind();
 
                 if let Some(target) = combined_area {
                     let Some(path) = component.as_path() else {
                         return Err(Error::CombinedSymbolContainsPointOrText(kind));
                     };
-                    symbol_set.add_area_component(target, PublicOrPrivateSymbol::Public(path))?;
+                    if symbol_set.would_cycle(target.into(), path) {
+                        return Err(Error::CyclicSymbolDefinition);
+                    }
+                    symbol_set
+                        .combined_area_symbol_mut(target)
+                        .ok_or(Error::SymbolConversionError)?
+                        .set_public(position, path);
                 } else if let Some(target) = combined_line {
                     let Some(line) = component.as_line_path() else {
                         return Err(Error::CombinedLineSymbolContainsNonLine(kind));
                     };
-                    symbol_set.add_line_component(target, PublicOrPrivateSymbol::Public(line))?;
+                    if symbol_set.would_cycle(target.into(), line.into()) {
+                        return Err(Error::CyclicSymbolDefinition);
+                    }
+                    symbol_set
+                        .combined_line_symbol_mut(target)
+                        .ok_or(Error::SymbolConversionError)?
+                        .set_public(position, line);
                 } else {
                     return Err(Error::ComponentsInNonCombinedSymbol);
                 }

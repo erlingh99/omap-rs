@@ -32,7 +32,10 @@ pub use text_symbol::{FramingMode, LineBelow, LineFraming, ShadowFraming, TextSy
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PublicOrPrivateSymbol<W, P> {
     /// A public (shared) reference to another symbol in the symbol set.
-    Public(W),
+    ///
+    /// `None` is a part whose symbol is gone, which the format writes as
+    /// `-1`. It keeps its place among the parts, as in Mapper.
+    Public(Option<W>),
     /// A private (embedded) sub-symbol.
     Private(P),
 }
