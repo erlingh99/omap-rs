@@ -6,6 +6,7 @@ mod text_object;
 
 mod map_object;
 
+use crate::Transformable;
 use geo_types::{Coord, LineString};
 pub use linestring2bezier::{BezierSegment, BezierString};
 use quick_xml::{
@@ -13,7 +14,6 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, BytesText, Event},
 };
 use std::collections::HashMap;
-use std::convert::Infallible;
 
 pub use area_object::{AreaObject, BezierPolygon, FlattenedPolygon, PatternRotation};
 pub use line_object::LineObject;
@@ -201,48 +201,6 @@ impl BezierPath {
         self.vertex_is_dash_point.reverse();
     }
 
-    /// Transform every endpoint and Bézier handle while preserving topology and
-    /// dash-point metadata.
-    pub fn transform<F>(self, transform: F) -> Self
-    where
-        F: Fn(Coord) -> Coord,
-    {
-        match self.try_transform(|coord| Ok::<_, Infallible>(transform(coord))) {
-            Ok(path) => path,
-            Err(never) => match never {},
-        }
-    }
-
-    /// Try to transform every endpoint and Bézier handle, stopping at the first
-    /// error.
-    ///
-    /// Equal input coordinates should map to equal output coordinates so the
-    /// path stays connected.
-    ///
-    /// # Errors
-    ///
-    /// Returns the first error produced by `transform`.
-    pub fn try_transform<E, F>(mut self, transform: F) -> std::result::Result<Self, E>
-    where
-        F: Fn(Coord) -> std::result::Result<Coord, E>,
-    {
-        for segment in self.geometry.segments_mut() {
-            match segment {
-                BezierSegment::Bezier(curve) => {
-                    curve.start = transform(curve.start)?;
-                    curve.handle1 = transform(curve.handle1)?;
-                    curve.handle2 = transform(curve.handle2)?;
-                    curve.end = transform(curve.end)?;
-                }
-                BezierSegment::Line(line) => {
-                    line.start = transform(line.start)?;
-                    line.end = transform(line.end)?;
-                }
-            }
-        }
-        Ok(self)
-    }
-
     /// Flatten the path while retaining dash-point metadata.
     ///
     /// Approximation vertices inserted inside a Bézier segment are not forced
@@ -323,6 +281,18 @@ impl BezierPath {
             return Err(Error::InvalidBezierPath);
         }
         Ok(())
+    }
+}
+
+/// Every endpoint and Bézier handle is transformed; topology and dash-point
+/// metadata are kept.
+impl Transformable for BezierPath {
+    fn try_transform<E>(
+        mut self,
+        transform: impl Fn(Coord) -> std::result::Result<Coord, E>,
+    ) -> std::result::Result<Self, E> {
+        self.geometry = self.geometry.try_transform(transform)?;
+        Ok(self)
     }
 }
 
@@ -656,7 +626,7 @@ mod tests {
         BezierPath, COORD_FLAG_CURVE_START, COORD_FLAG_DASH_POINT, FlattenedPath,
         bezier_from_file_coords, file_coords_from_bezier,
     };
-    use crate::{Error, NonNegativeF64, Result};
+    use crate::{Error, NonNegativeF64, Result, Transformable as _};
 
     fn assert_vertex_flag_count(path: &BezierPath) {
         let expected = if path.is_empty() {

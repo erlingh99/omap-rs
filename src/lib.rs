@@ -29,6 +29,7 @@ pub mod view;
 use std::{fmt::Debug, io::BufWriter};
 
 pub use collection::{Collection, Entry, Removed};
+pub use geo_referencing::Transformable;
 /// Re-export `geo_types` for convenience for downstream users
 pub use geo_types;
 pub use omap::Omap;

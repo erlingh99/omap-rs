@@ -1,10 +1,13 @@
 mod geo_ref;
 mod map_transform;
+mod transformable;
 
 use std::str::FromStr;
 
 pub use geo_ref::GeoRef;
 pub use map_transform::MapTransform;
+pub use transformable::Transformable;
+pub(crate) use transformable::try_transform_all;
 
 #[cfg(feature = "geo_ref")]
 use proj_core::CrsDef;
