@@ -6,13 +6,14 @@ mod line;
 mod point;
 mod text;
 
+use crate::Code;
 use crate::colors::ColorSet;
 use crate::symbols::{
     AreaOrLineSymbol, AreaSymbol, CombinedAreaSymbol, CombinedLineSymbol, LineSymbol, PointSymbol,
     PublicOrPrivateSymbol, Symbol, SymbolCommon, SymbolId, SymbolKind, SymbolSet, TextSymbol,
 };
 use crate::xml::attrs::{parse_attr, parse_attr_raw, try_get_attr, try_get_attr_raw};
-use crate::{Code, Error, OmapSection, Result};
+use crate::xml::{Error, Result, Section};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
 
@@ -216,7 +217,7 @@ impl SymbolSet {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::Symbols));
+                    return Err(Error::UnexpectedEof(Section::Symbols));
                 }
                 _ => (),
             }
@@ -317,22 +318,22 @@ impl SymbolSet {
                         return Err(Error::CombinedSymbolContainsPointOrText(kind));
                     };
                     if symbol_set.would_cycle(target.into(), path) {
-                        return Err(Error::CyclicSymbolDefinition);
+                        return Err(Error::Domain(crate::Error::CyclicSymbolDefinition));
                     }
                     symbol_set
                         .combined_area_symbol_mut(target)
-                        .ok_or(Error::SymbolConversionError)?
+                        .ok_or(Error::Domain(crate::Error::SymbolConversionError))?
                         .set_public(position, path);
                 } else if let Some(target) = combined_line {
                     let Some(line) = component.as_line_path() else {
                         return Err(Error::CombinedLineSymbolContainsNonLine(kind));
                     };
                     if symbol_set.would_cycle(target.into(), line.into()) {
-                        return Err(Error::CyclicSymbolDefinition);
+                        return Err(Error::Domain(crate::Error::CyclicSymbolDefinition));
                     }
                     symbol_set
                         .combined_line_symbol_mut(target)
-                        .ok_or(Error::SymbolConversionError)?
+                        .ok_or(Error::Domain(crate::Error::SymbolConversionError))?
                         .set_public(position, line);
                 } else {
                     return Err(Error::ComponentsInNonCombinedSymbol);

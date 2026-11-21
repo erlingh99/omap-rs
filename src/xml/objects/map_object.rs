@@ -7,7 +7,7 @@ use crate::symbols::{
     AreaPathSymbolId, LinePathSymbolId, PointSymbolId, SymbolId, SymbolSet, TextSymbolId,
 };
 use crate::xml::attrs::parse_attr_raw;
-use crate::{Error, Result};
+use crate::xml::{Error, Result};
 use quick_xml::events::BytesStart;
 use quick_xml::{Reader, Writer};
 
@@ -25,9 +25,9 @@ fn narrow<'a, T>(
     symbol: Option<crate::Entry<'a, SymbolId, crate::symbols::Symbol>>,
 ) -> Result<Option<T>>
 where
-    T: TryFrom<crate::Entry<'a, SymbolId, crate::symbols::Symbol>, Error = Error>,
+    T: TryFrom<crate::Entry<'a, SymbolId, crate::symbols::Symbol>, Error = crate::Error>,
 {
-    symbol.map(T::try_from).transpose()
+    Ok(symbol.map(T::try_from).transpose()?)
 }
 
 impl MapObject {
@@ -140,10 +140,11 @@ mod tests {
     use geo_types::{LineString, Point, Polygon, coord};
 
     use super::MapObject;
-    use crate::{
-        Result,
-        objects::{AreaObject, PointObject, TextGeometry, TextObject},
-    };
+    use crate::objects::AreaObject;
+    use crate::objects::PointObject;
+    use crate::objects::TextGeometry;
+    use crate::objects::TextObject;
+    use crate::xml::Result;
 
     #[test]
     fn rotatable_objects_follow_transform_rotation() -> Result<()> {
@@ -154,7 +155,7 @@ mod tests {
         let mut point = MapObject::Point(point);
         point.transform(transform);
         let MapObject::Point(point) = point else {
-            return Err(crate::Error::ObjectError);
+            return Err(crate::xml::Error::ObjectError);
         };
         assert!((point.rotation - (0.1 + FRAC_PI_2)).abs() < 1e-12);
 
@@ -167,7 +168,7 @@ mod tests {
         let mut text = MapObject::Text(text);
         text.transform(transform);
         let MapObject::Text(text) = text else {
-            return Err(crate::Error::ObjectError);
+            return Err(crate::xml::Error::ObjectError);
         };
         assert!((text.rotation - (-0.2 + FRAC_PI_2)).abs() < 1e-12);
 
@@ -183,7 +184,7 @@ mod tests {
         let mut area = MapObject::Area(area);
         area.transform(transform);
         let MapObject::Area(area) = area else {
-            return Err(crate::Error::ObjectError);
+            return Err(crate::xml::Error::ObjectError);
         };
         assert!((area.pattern_rotation.rotation - (0.3 + FRAC_PI_2)).abs() < 1e-12);
 

@@ -77,7 +77,7 @@ impl Omap {
         projected_ref_point: Coord,
         crs: CrsType,
         meters_above_sea: f64,
-    ) -> Result<Self> {
+    ) -> crate::xml::Result<Self> {
         let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, SCALE_15_000)?;
         let mut omap = crate::xml::read(DEFAULT_ISOM_15000)?;
         omap.geo_referencing = geo_ref;
@@ -95,7 +95,7 @@ impl Omap {
         projected_ref_point: Coord,
         crs: CrsType,
         meters_above_sea: f64,
-    ) -> Result<Self> {
+    ) -> crate::xml::Result<Self> {
         let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, SCALE_10_000)?;
         let mut omap = crate::xml::read(DEFAULT_ISOM_10000)?;
         omap.geo_referencing = geo_ref;
@@ -113,7 +113,7 @@ impl Omap {
         projected_ref_point: Coord,
         crs: CrsType,
         meters_above_sea: f64,
-    ) -> Result<Self> {
+    ) -> crate::xml::Result<Self> {
         let geo_ref = GeoRef::initialize(projected_ref_point, crs, meters_above_sea, SCALE_4_000)?;
         let mut omap = crate::xml::read(DEFAULT_ISSPROM_4000)?;
         omap.geo_referencing = geo_ref;
@@ -125,7 +125,7 @@ impl Omap {
     /// # Errors
     ///
     /// Returns an error if the embedded default map cannot be parsed.
-    pub fn default_15_000() -> Result<Self> {
+    pub fn default_15_000() -> crate::xml::Result<Self> {
         crate::xml::read(DEFAULT_ISOM_15000)
     }
 
@@ -134,7 +134,7 @@ impl Omap {
     /// # Errors
     ///
     /// Returns an error if the embedded default map cannot be parsed.
-    pub fn default_10_000() -> Result<Self> {
+    pub fn default_10_000() -> crate::xml::Result<Self> {
         crate::xml::read(DEFAULT_ISOM_10000)
     }
 
@@ -143,7 +143,7 @@ impl Omap {
     /// # Errors
     ///
     /// Returns an error if the embedded default map cannot be parsed.
-    pub fn default_4_000() -> Result<Self> {
+    pub fn default_4_000() -> crate::xml::Result<Self> {
         crate::xml::read(DEFAULT_ISSPROM_4000)
     }
 
@@ -387,10 +387,13 @@ fn format_for(path: &Path) -> std::result::Result<&'static dyn format::Format, f
 mod tests {
     use std::{fs, num::NonZeroU32};
 
+    /// What a test returns: any error fails it.
+    type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+
     use geo_types::{Coord, Point};
 
     use super::Omap;
-    use crate::{Error, Result, ValidationError, objects::PointObject};
+    use crate::{Error, ValidationError, objects::PointObject};
 
     fn point_positions(map: &Omap) -> Vec<Coord> {
         map.iter_all_objects()
@@ -402,7 +405,7 @@ mod tests {
     }
 
     #[test]
-    fn try_transform_is_transactional() -> Result<()> {
+    fn try_transform_is_transactional() -> TestResult {
         let mut map = Omap::new(NonZeroU32::new(10_000).expect("the scale is nonzero"));
         let part = map.parts.at_mut(0).ok_or(Error::ObjectError)?;
         part.objects
@@ -428,7 +431,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_reports_the_dangling_object_location() -> Result<()> {
+    fn validate_reports_the_dangling_object_location() -> TestResult {
         let mut map = Omap::new(NonZeroU32::new(10_000).ok_or(Error::ObjectError)?);
         let point = map
             .symbols
@@ -454,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn an_object_without_a_symbol_validates() -> Result<()> {
+    fn an_object_without_a_symbol_validates() -> TestResult {
         let mut map = Omap::new(NonZeroU32::new(10_000).ok_or(Error::ObjectError)?);
         let part = map.parts.at_mut(0).ok_or(Error::ObjectError)?;
         part.objects
@@ -465,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn to_file_preserves_existing_file_when_serialization_fails() -> Result<()> {
+    fn to_file_preserves_existing_file_when_serialization_fails() -> TestResult {
         let path = std::env::temp_dir().join(format!(
             "omap-rs-atomic-write-test-{}.omap",
             std::process::id(),
@@ -480,7 +483,9 @@ mod tests {
         let result = map.to_file(&path);
         assert!(matches!(
             result,
-            Err(crate::format::Error::Xml(Error::MapCoordOutOfBounds))
+            Err(crate::format::Error::Xml(
+                crate::xml::Error::MapCoordOutOfBounds
+            ))
         ));
         assert_eq!(fs::read(&path)?, b"previous map");
         fs::remove_file(path)?;
@@ -490,7 +495,7 @@ mod tests {
     /// A dangling reference must prune to `None`, never to whatever value later
     /// takes the removed symbol's place.
     #[test]
-    fn pruning_drops_references_to_removed_symbols() -> Result<()> {
+    fn pruning_drops_references_to_removed_symbols() -> TestResult {
         let mut map = crate::xml::read(super::DEFAULT_ISOM_15000)?;
         let point = map
             .symbols
@@ -526,7 +531,7 @@ mod tests {
 
     /// A map whose objects, symbols and colors dangle: a point object drawn
     /// with a removed symbol, and a removed color some symbol drew with.
-    fn dangling_map() -> Result<Omap> {
+    fn dangling_map() -> TestResult<Omap> {
         let mut map = crate::xml::read(super::DEFAULT_ISOM_15000)?;
         let (point, _) = map
             .symbols
@@ -551,7 +556,7 @@ mod tests {
     }
 
     #[test]
-    fn writing_a_dangling_map_writes_it_as_pruned() -> Result<()> {
+    fn writing_a_dangling_map_writes_it_as_pruned() -> TestResult {
         let map = dangling_map()?;
         let mut pruned = map.clone();
         pruned.prune_dangling_references();
@@ -566,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn writing_leaves_the_map_as_it_was() -> Result<()> {
+    fn writing_leaves_the_map_as_it_was() -> TestResult {
         let map = dangling_map()?;
         let before = map.validate();
 

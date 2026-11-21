@@ -53,7 +53,7 @@ pub fn for_path(path: impl AsRef<Path>) -> Option<&'static dyn Format> {
 pub enum Error {
     /// The `OpenOrienteering` Mapper XML format.
     #[error(transparent)]
-    Xml(crate::Error),
+    Xml(crate::xml::Error),
     /// Reading or writing the file itself.
     #[error(transparent)]
     Io(#[from] std::io::Error),

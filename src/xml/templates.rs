@@ -8,7 +8,7 @@ use crate::templates::{
 use crate::view::TemplateVisibility;
 use crate::xml::attrs::{parse_attr_raw, try_get_attr_raw};
 use crate::xml::units::{from_file_coords, to_file_coords};
-use crate::{Error, OmapSection, Result};
+use crate::xml::{Error, Result, Section};
 use geo_types::Coord;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
@@ -89,7 +89,7 @@ impl Templates {
                 },
                 Event::End(be) if be.local_name().as_ref() == "templates" => break,
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::Templates));
+                    return Err(Error::UnexpectedEof(Section::Templates));
                 }
                 _ => {}
             }
@@ -267,7 +267,7 @@ impl Template {
                 },
                 Event::End(be) if be.local_name().as_ref() == "template" => break,
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::Template));
+                    return Err(Error::UnexpectedEof(Section::Template));
                 }
                 _ => {}
             }
@@ -406,7 +406,7 @@ impl TemplateTransformations {
                     break;
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::TemplateTransformations));
+                    return Err(Error::UnexpectedEof(Section::TemplateTransformations));
                 }
                 _ => {}
             }
@@ -484,7 +484,7 @@ impl PassPoint {
                     break;
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::PassPoint));
+                    return Err(Error::UnexpectedEof(Section::PassPoint));
                 }
                 _ => {}
             }
@@ -531,7 +531,7 @@ impl Matrix3x3 {
                 }
                 Event::End(be) if be.local_name().as_ref() == "matrix" => break,
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::Matrix));
+                    return Err(Error::UnexpectedEof(Section::Matrix));
                 }
                 _ => {}
             }
@@ -588,7 +588,7 @@ fn parse_inner_coord<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Coor
             }
             Event::End(_) => break,
             Event::Eof => {
-                return Err(Error::UnexpectedEof(OmapSection::CoordinateWrapper));
+                return Err(Error::UnexpectedEof(Section::CoordinateWrapper));
             }
             _ => {}
         }

@@ -4,7 +4,7 @@ use crate::objects::MapObject;
 use crate::parts::{MapPart, MapParts};
 use crate::symbols::SymbolSet;
 use crate::xml::attrs::try_get_attr;
-use crate::{Error, OmapSection, Result};
+use crate::xml::{Error, Result, Section};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 
@@ -39,7 +39,7 @@ impl MapPart {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::MapPart));
+                    return Err(Error::UnexpectedEof(Section::MapPart));
                 }
                 _ => (),
             }
@@ -120,7 +120,7 @@ impl MapParts {
                 }
                 Event::End(_) => break,
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::Parts));
+                    return Err(Error::UnexpectedEof(Section::Parts));
                 }
                 _ => (),
             }
@@ -136,11 +136,10 @@ mod tests {
     use quick_xml::{Reader, Writer, events::Event};
 
     use super::MapPart;
-    use crate::{
-        Result,
-        objects::{LineObject, MapObject},
-        symbols::SymbolSet,
-    };
+    use crate::objects::LineObject;
+    use crate::objects::MapObject;
+    use crate::symbols::SymbolSet;
+    use crate::xml::Result;
 
     fn empty_symbol_set() -> SymbolSet {
         SymbolSet::new()

@@ -6,7 +6,10 @@
 
 #![cfg(feature = "serde")]
 
-use omap::{Omap, Result};
+use omap::Omap;
+
+/// What a test returns: any error fails it.
+type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 const ISOM_15000: &[u8] = include_bytes!("../src/default_maps/isom_15000.omap");
 const ISSPROM_4000: &[u8] = include_bytes!("../src/default_maps/issprom_4000.omap");
@@ -115,7 +118,7 @@ fn reference_graph(map: &Omap) -> ReferenceGraph {
 }
 
 #[test]
-fn the_reference_graph_survives_a_json_round_trip() -> Result<()> {
+fn the_reference_graph_survives_a_json_round_trip() -> TestResult {
     for (name, bytes) in corpus() {
         let map = omap::xml::read(bytes)?;
         // Sorting happens on write, so do it first to compare like with like.
@@ -143,7 +146,7 @@ fn the_reference_graph_survives_a_json_round_trip() -> Result<()> {
 /// round trip must still resolve afterwards — not merely some handle at the
 /// same index.
 #[test]
-fn handles_resolve_to_the_same_symbols_after_a_round_trip() -> Result<()> {
+fn handles_resolve_to_the_same_symbols_after_a_round_trip() -> TestResult {
     let map = omap::xml::read(ISOM_15000)?;
     let json = serde_json::to_string(&map).expect("serialize");
     let restored: Omap = serde_json::from_str(&json).expect("deserialize");
@@ -169,7 +172,7 @@ fn handles_resolve_to_the_same_symbols_after_a_round_trip() -> Result<()> {
 /// gap round-trips, the survivors keep their handles, and the removed symbol
 /// stays removed.
 #[test]
-fn a_removal_survives_a_round_trip_without_pruning() -> Result<()> {
+fn a_removal_survives_a_round_trip_without_pruning() -> TestResult {
     let mut map = omap::xml::read(ISOM_15000)?;
     let doomed = map.symbols.ids().nth(3).expect("a fourth symbol");
     let survivor = map.symbols.ids().nth(4).expect("a fifth symbol");

@@ -1,5 +1,6 @@
 //! Line symbols.
 
+use crate::NonNegativeF64;
 use crate::colors::{ColorSet, SymbolColor};
 use crate::symbols::{
     BorderDash, BorderStyle, CapStyle, DashStyle, DashSymbol, GroupDashes, JoinStyle, LineSymbol,
@@ -7,7 +8,7 @@ use crate::symbols::{
 };
 use crate::xml::attrs::{parse_attr, parse_attr_raw, try_get_attr_raw};
 use crate::xml::symbols::SymbolPosition;
-use crate::{Error, NonNegativeF64, OmapSection, Result};
+use crate::xml::{Error, Result, Section};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 use std::str::FromStr;
@@ -224,7 +225,7 @@ impl LineSymbol {
                     break;
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::LineSymbol));
+                    return Err(Error::UnexpectedEof(Section::LineSymbol));
                 }
                 _ => {}
             }
@@ -318,7 +319,7 @@ impl LineSymbol {
                     _ => (),
                 },
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::PointSymbol));
+                    return Err(Error::UnexpectedEof(Section::PointSymbol));
                 }
                 _ => {}
             }
@@ -357,7 +358,7 @@ impl LineSymbol {
                     break;
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::LineSymbol));
+                    return Err(Error::UnexpectedEof(Section::LineSymbol));
                 }
                 _ => {}
             }

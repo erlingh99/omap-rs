@@ -1,12 +1,13 @@
 //! Area symbols and their fill patterns.
 
+use crate::NonNegativeF64;
 use crate::colors::{ColorSet, SymbolColor};
 use crate::symbols::{
     AreaSymbol, ClippingOption, FillPattern, PointSymbol, SymbolCommon, SymbolKind,
 };
 use crate::xml::attrs::{parse_attr, try_get_attr_raw};
 use crate::xml::symbols::SymbolPosition;
-use crate::{Error, NonNegativeF64, OmapSection, Result};
+use crate::xml::{Error, Result, Section};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 use std::str::FromStr;
@@ -59,7 +60,7 @@ impl FillPattern {
                             break;
                         }
                         Event::Eof => {
-                            return Err(Error::UnexpectedEof(OmapSection::FillPattern));
+                            return Err(Error::UnexpectedEof(Section::FillPattern));
                         }
                         _ => {}
                     }
@@ -104,7 +105,7 @@ impl FillPattern {
                             break;
                         }
                         Event::Eof => {
-                            return Err(Error::UnexpectedEof(OmapSection::FillPatternPoint));
+                            return Err(Error::UnexpectedEof(Section::FillPatternPoint));
                         }
                         _ => {}
                     }
@@ -236,7 +237,7 @@ impl AreaSymbol {
                     break;
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::AreaSymbol));
+                    return Err(Error::UnexpectedEof(Section::AreaSymbol));
                 }
                 _ => {}
             }

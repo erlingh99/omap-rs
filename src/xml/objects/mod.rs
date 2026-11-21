@@ -9,7 +9,7 @@ mod text;
 use crate::objects::{BezierPath, BezierSegment, BezierString};
 use crate::xml::attrs::try_get_attr;
 use crate::xml::units::{from_file_coords, to_file_coords};
-use crate::{CoordinateComponent, Error, OmapSection, Result};
+use crate::xml::{CoordinateComponent, Error, Result, Section};
 use geo_types::Coord;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
@@ -170,7 +170,7 @@ pub(crate) fn parse_tags<R: std::io::BufRead>(
                 break;
             }
             Event::Eof => {
-                return Err(Error::UnexpectedEof(OmapSection::Tags));
+                return Err(Error::UnexpectedEof(Section::Tags));
             }
             _ => (),
         }
@@ -232,7 +232,9 @@ mod tests {
         COORD_FLAG_CURVE_START, COORD_FLAG_DASH_POINT, bezier_from_file_coords,
         file_coords_from_bezier,
     };
-    use crate::{NonNegativeF64, Result, objects::BezierPath};
+    use crate::NonNegativeF64;
+    use crate::objects::BezierPath;
+    use crate::xml::Result;
 
     #[test]
     fn flattening_and_serialization_retain_dash_points() -> Result<()> {

@@ -1,11 +1,12 @@
 //! Text symbols.
 
+use crate::NonNegativeF64;
 use crate::colors::{ColorSet, SymbolColor};
 use crate::symbols::{
     FramingMode, LineBelow, LineFraming, ShadowFraming, SymbolCommon, TextSymbol,
 };
 use crate::xml::attrs::try_get_attr_raw;
-use crate::{Error, NonNegativeF64, OmapSection, Result};
+use crate::xml::{Error, Result, Section};
 use geo_types::Coord;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
@@ -121,7 +122,7 @@ impl TextSymbol {
                     break;
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::TextSymbol));
+                    return Err(Error::UnexpectedEof(Section::TextSymbol));
                 }
                 _ => {}
             }

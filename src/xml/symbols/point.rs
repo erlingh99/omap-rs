@@ -1,11 +1,12 @@
 //! Point symbols and their elements.
 
+use crate::NonNegativeF64;
 use crate::colors::{ColorSet, SymbolColor};
 use crate::objects::{AreaObject, LineObject, PointObject};
 use crate::symbols::{AreaSymbol, Element, LineSymbol, PointSymbol, SymbolCommon, SymbolKind};
 use crate::xml::attrs::try_get_attr_raw;
 use crate::xml::symbols::SymbolPosition;
-use crate::{Error, NonNegativeF64, OmapSection, Result};
+use crate::xml::{Error, Result, Section};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 
@@ -109,7 +110,7 @@ impl Element {
                     break;
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::Element));
+                    return Err(Error::UnexpectedEof(Section::Element));
                 }
                 _ => {}
             }
@@ -191,7 +192,7 @@ impl PointSymbol {
                     break;
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::PointSymbol));
+                    return Err(Error::UnexpectedEof(Section::PointSymbol));
                 }
                 _ => {}
             }
@@ -275,9 +276,13 @@ mod tests {
     use geo_types::LineString;
     use quick_xml::Writer;
 
+    use crate::Code;
+    use crate::colors::ColorSet;
+    use crate::objects::LineObject;
+    use crate::symbols::LineSymbol;
     use crate::symbols::{Element, PointSymbol};
+    use crate::xml::Result;
     use crate::xml::symbols::SymbolPosition;
-    use crate::{Code, Result, colors::ColorSet, objects::LineObject, symbols::LineSymbol};
 
     fn empty_line_element() -> Element {
         Element::Line {

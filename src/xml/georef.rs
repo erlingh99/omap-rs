@@ -2,7 +2,7 @@
 
 use crate::geo_referencing::{CrsType, GeoRef};
 use crate::xml::attrs::try_get_attr_raw;
-use crate::{Error, OmapSection, Result};
+use crate::xml::{Error, Result, Section};
 use geo_types::Coord;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
@@ -126,7 +126,7 @@ impl GeoRef {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::Georeferencing));
+                    return Err(Error::UnexpectedEof(Section::Georeferencing));
                 }
                 _ => (),
             }
@@ -196,7 +196,7 @@ fn parse_projected_crs<R: std::io::BufRead>(
                 }
             }
             Event::Eof => {
-                return Err(Error::UnexpectedEof(OmapSection::Georeferencing));
+                return Err(Error::UnexpectedEof(Section::Georeferencing));
             }
             _ => (),
         }
@@ -226,7 +226,7 @@ fn parse_geographic_crs<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<C
                 }
             }
             Event::Eof => {
-                return Err(Error::UnexpectedEof(OmapSection::Georeferencing));
+                return Err(Error::UnexpectedEof(Section::Georeferencing));
             }
             _ => (),
         }
@@ -245,7 +245,7 @@ fn get_projected_crs_spec<R: std::io::BufRead>(
                 return crate::xml::read_text(reader);
             }
             Event::Eof => {
-                return Err(Error::UnexpectedEof(OmapSection::Georeferencing));
+                return Err(Error::UnexpectedEof(Section::Georeferencing));
             }
             _ => (),
         }

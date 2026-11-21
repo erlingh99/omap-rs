@@ -4,7 +4,7 @@ use crate::objects::{BezierPath, LineObject};
 use crate::symbols::{LinePathSymbolId, SymbolSet};
 use crate::xml::attrs::try_get_attr_raw;
 use crate::xml::objects::{COORD_FLAGS_RING_END, bezier_from_file_coords, file_coords_from_bezier};
-use crate::{Error, OmapSection, Result};
+use crate::xml::{Error, Result, Section};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 use std::collections::HashMap;
@@ -81,7 +81,7 @@ impl LineObject {
                 Event::Text(text) => {
                     crate::xml::objects::parse_file_coords(text.as_ref(), &mut file_coords)?;
                 }
-                Event::Eof => return Err(Error::UnexpectedEof(OmapSection::LineObject)),
+                Event::Eof => return Err(Error::UnexpectedEof(Section::LineObject)),
                 _ => (),
             }
         }
@@ -97,10 +97,11 @@ mod tests {
     use quick_xml::{Reader, Writer, events::Event};
 
     use super::LineObject;
-    use crate::{
-        NonNegativeF64, Result,
-        objects::{BezierPath, BezierSegment, FlattenedPath},
-    };
+    use crate::NonNegativeF64;
+    use crate::objects::BezierPath;
+    use crate::objects::BezierSegment;
+    use crate::objects::FlattenedPath;
+    use crate::xml::Result;
 
     #[test]
     fn fitted_line_string_can_construct_line_object() -> Result<()> {

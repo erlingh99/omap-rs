@@ -4,10 +4,13 @@
 
 use std::sync::Arc;
 
+use omap::Omap;
 use omap::objects::{MapObject, ObjectId};
 use omap::parts::{MapPart, MapParts};
 use omap::symbols::SymbolId;
-use omap::{Omap, Result};
+
+/// What a test returns: any error fails it.
+type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 const FROM_PATH: &[u8] = include_bytes!("../example_data/from_path.omap");
 const ISOM_15000: &[u8] = include_bytes!("../src/default_maps/isom_15000.omap");
@@ -92,7 +95,7 @@ fn editing_a_copy_leaves_the_original_unchanged_and_back() {
 }
 
 #[test]
-fn replacing_a_color_in_a_copy_leaves_the_original_unchanged() -> Result<()> {
+fn replacing_a_color_in_a_copy_leaves_the_original_unchanged() -> TestResult {
     let original = omap::xml::read(ISOM_15000)?;
     let ids: Vec<_> = original.colors.ids().collect();
     let name = |map: &Omap, at: usize| map.colors.get(ids[at]).expect("resolves").name().to_owned();
@@ -180,7 +183,7 @@ fn restoring_an_object_is_refused_for_a_foreign_handle() {
 }
 
 /// The objects the map, written and read back, draws with the symbol coded like `code`.
-fn written_objects_with(map: &Omap, code: omap::Code) -> Result<usize> {
+fn written_objects_with(map: &Omap, code: omap::Code) -> TestResult<usize> {
     let mut bytes = Vec::new();
     omap::xml::write(map, &mut bytes)?;
     let read = omap::xml::read(bytes.as_slice())?;
@@ -193,7 +196,7 @@ fn written_objects_with(map: &Omap, code: omap::Code) -> Result<usize> {
 }
 
 #[test]
-fn objects_of_a_restored_symbol_use_it_again() -> Result<()> {
+fn objects_of_a_restored_symbol_use_it_again() -> TestResult {
     let mut map = from_path();
     let symbol = map
         .iter_all_objects()

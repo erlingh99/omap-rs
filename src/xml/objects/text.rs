@@ -1,10 +1,11 @@
 //! Text objects.
 
+use crate::NonNegativeF64;
 use crate::objects::{HorizontalAlign, TextGeometry, TextObject, VerticalAlign, WrapBox};
 use crate::symbols::{SymbolSet, TextSymbolId};
 use crate::xml::attrs::try_get_attr_raw;
 use crate::xml::units::{from_file_coords, to_file_coords};
-use crate::{CoordinateComponent, Error, NonNegativeF64, OmapSection, Result};
+use crate::xml::{CoordinateComponent, Error, Result, Section};
 use geo_types::Coord;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
@@ -193,7 +194,7 @@ impl TextObject {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::TextObject));
+                    return Err(Error::UnexpectedEof(Section::TextObject));
                 }
                 _ => (),
             }

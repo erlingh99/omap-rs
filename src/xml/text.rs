@@ -1,6 +1,6 @@
 //! Element text content.
 
-use crate::Result;
+use crate::xml::Result;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer, XmlVersion};
 

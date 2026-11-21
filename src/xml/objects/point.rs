@@ -3,7 +3,7 @@
 use crate::objects::PointObject;
 use crate::symbols::{PointSymbolId, SymbolSet};
 use crate::xml::units::{from_file_coords, to_file_coords};
-use crate::{CoordinateComponent, Error, ObjectKind, OmapSection, Result};
+use crate::xml::{CoordinateComponent, Error, ObjectKind, Result, Section};
 use geo_types::{Coord, Point};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
@@ -111,7 +111,7 @@ impl PointObject {
                     }
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::PointObject));
+                    return Err(Error::UnexpectedEof(Section::PointObject));
                 }
                 _ => (),
             }

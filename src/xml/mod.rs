@@ -7,6 +7,7 @@
 
 pub(crate) mod attrs;
 pub(crate) mod colors;
+mod error;
 pub(crate) mod format_info;
 pub(crate) mod georef;
 pub(crate) mod objects;
@@ -17,20 +18,19 @@ mod text;
 pub(crate) mod units;
 pub(crate) mod view;
 
+pub use error::{CoordinateComponent, Error, ObjectKind, Result, Section};
 pub(crate) use text::{read_text, write_notes};
 
-use std::io::{BufReader, Read, Write};
-
-use quick_xml::{
-    Reader, Writer,
-    events::{BytesEnd, Event},
-};
-
-use crate::{
-    Error, Omap, Result, format, geo_referencing::GeoRef, parts::MapParts, symbols::SymbolSet,
-    templates::Templates, view::View,
-};
+use crate::geo_referencing::GeoRef;
+use crate::parts::MapParts;
+use crate::symbols::SymbolSet;
+use crate::templates::Templates;
+use crate::view::View;
+use crate::{Omap, format};
 use format_info::{OmapVersion, XmlDeclaration};
+use quick_xml::events::{BytesEnd, Event};
+use quick_xml::{Reader, Writer};
+use std::io::{BufReader, Read, Write};
 
 /// The `OpenOrienteering` Mapper XML format: `.omap` and `.xmap` files.
 #[derive(Debug, Clone, Copy, Default)]
@@ -94,8 +94,8 @@ pub fn read(reader: impl Read) -> Result<Omap> {
                         symbols = Some(SymbolSet::parse(&mut reader, &bytes_start, colors)?);
                     } else {
                         return Err(Error::SectionOutOfOrder {
-                            section: crate::OmapSection::Symbols,
-                            required_before: crate::OmapSection::Colors,
+                            section: Section::Symbols,
+                            required_before: Section::Colors,
                         });
                     }
                 }
@@ -104,8 +104,8 @@ pub fn read(reader: impl Read) -> Result<Omap> {
                         parts = Some(MapParts::parse(&mut reader, symbols)?);
                     } else {
                         return Err(Error::SectionOutOfOrder {
-                            section: crate::OmapSection::Parts,
-                            required_before: crate::OmapSection::Symbols,
+                            section: Section::Parts,
+                            required_before: Section::Symbols,
                         });
                     }
                 }
@@ -129,16 +129,14 @@ pub fn read(reader: impl Read) -> Result<Omap> {
     }
 
     let (symbols, symbol_set_name) =
-        symbols.ok_or(Error::MissingRequiredSection(crate::OmapSection::Symbols))?;
+        symbols.ok_or(Error::MissingRequiredSection(Section::Symbols))?;
     Ok(Omap {
         notes,
-        geo_referencing: georef.ok_or(Error::MissingRequiredSection(
-            crate::OmapSection::Georeferencing,
-        ))?,
-        colors: colors.ok_or(Error::MissingRequiredSection(crate::OmapSection::Colors))?,
+        geo_referencing: georef.ok_or(Error::MissingRequiredSection(Section::Georeferencing))?,
+        colors: colors.ok_or(Error::MissingRequiredSection(Section::Colors))?,
         symbols,
         symbol_set_name,
-        parts: parts.ok_or(Error::MissingRequiredSection(crate::OmapSection::Parts))?,
+        parts: parts.ok_or(Error::MissingRequiredSection(Section::Parts))?,
         templates,
         view,
     })

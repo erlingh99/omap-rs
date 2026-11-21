@@ -1,10 +1,11 @@
 //! The `<view>` section: zoom, grid and template visibility.
 
+use crate::NonNegativeF64;
 use crate::templates::Templates;
 use crate::utils::UnitF64;
 use crate::view::{Grid, GridAlignment, GridDisplay, GridUnit, TemplateVisibility, View};
 use crate::xml::attrs::{parse_attr_raw, try_get_attr_raw};
-use crate::{Error, NonNegativeF64, Result};
+use crate::xml::{Error, Result};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 use std::str::FromStr;

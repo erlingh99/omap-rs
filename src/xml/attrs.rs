@@ -1,6 +1,6 @@
 //! Reading typed attribute values.
 
-use crate::{Error, Result};
+use crate::xml::{Error, Result};
 use quick_xml::XmlVersion;
 use quick_xml::events::BytesStart;
 use quick_xml::events::attributes::Attribute;

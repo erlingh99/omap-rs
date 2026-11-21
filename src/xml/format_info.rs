@@ -1,7 +1,7 @@
 //! The XML declaration and the root `<map>` element's version.
 
 use crate::xml::attrs::try_get_attr_raw;
-use crate::{Error, Result};
+use crate::xml::{Error, Result};
 use quick_xml::events::{BytesDecl, BytesStart, Event};
 use quick_xml::{Writer, XmlVersion};
 use std::str::FromStr;

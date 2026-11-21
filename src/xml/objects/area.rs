@@ -7,7 +7,7 @@ use crate::xml::objects::{
     COORD_FLAGS_RING_END, FileCoord, bezier_from_file_coords, file_coords_from_bezier,
 };
 use crate::xml::units::{from_file_coords, to_file_coords};
-use crate::{Error, OmapSection, Result};
+use crate::xml::{Error, Result, Section};
 use geo_types::Coord;
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
@@ -117,7 +117,7 @@ impl AreaObject {
                 Event::Text(text) => {
                     crate::xml::objects::parse_file_coords(text.as_ref(), &mut file_coords)?;
                 }
-                Event::Eof => return Err(Error::UnexpectedEof(OmapSection::AreaObject)),
+                Event::Eof => return Err(Error::UnexpectedEof(Section::AreaObject)),
                 _ => (),
             }
         }
@@ -158,7 +158,9 @@ mod tests {
     use quick_xml::{Reader, Writer, events::Event};
 
     use super::{AreaObject, BezierPolygon};
-    use crate::{NonNegativeF64, Result, objects::BezierSegment};
+    use crate::NonNegativeF64;
+    use crate::objects::BezierSegment;
+    use crate::xml::Result;
 
     #[test]
     fn fitted_polygon_can_construct_area_object() -> Result<()> {

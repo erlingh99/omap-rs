@@ -2,23 +2,28 @@
 //! for storing, and narrowing through `TryFrom` or the `as_*` helpers.
 
 use omap::{
-    Code, Omap, Result,
+    Code, Omap,
     colors::{ColorId, ColorKind, MixedColorId, SpotColorId},
     symbols::{
         LinePathSymbolId, LineSymbolId, PathSymbolId, PointSymbolId, Symbol, SymbolId, SymbolKind,
     },
 };
 
+/// What a test returns: any error fails it.
+type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+
 fn erosion_gully() -> Code {
     Code::new(107, 0, 0)
 }
 
-fn isom() -> Result<Omap> {
-    omap::xml::read(include_bytes!("../src/default_maps/isom_15000.omap").as_slice())
+fn isom() -> TestResult<Omap> {
+    Ok(omap::xml::read(
+        include_bytes!("../src/default_maps/isom_15000.omap").as_slice(),
+    )?)
 }
 
 #[test]
-fn a_lookup_reads_the_symbol_and_yields_the_handle() -> Result<()> {
+fn a_lookup_reads_the_symbol_and_yields_the_handle() -> TestResult {
     let map = isom()?;
     let found = map
         .symbols
@@ -36,7 +41,7 @@ fn a_lookup_reads_the_symbol_and_yields_the_handle() -> Result<()> {
 }
 
 #[test]
-fn narrowing_composes_with_every_lookup_key() -> Result<()> {
+fn narrowing_composes_with_every_lookup_key() -> TestResult {
     let map = isom()?;
 
     let by_code = map
@@ -73,7 +78,7 @@ fn narrowing_composes_with_every_lookup_key() -> Result<()> {
 }
 
 #[test]
-fn narrowing_to_the_wrong_kind_is_none() -> Result<()> {
+fn narrowing_to_the_wrong_kind_is_none() -> TestResult {
     let map = isom()?;
     let found = map
         .symbols
@@ -92,7 +97,7 @@ fn narrowing_to_the_wrong_kind_is_none() -> Result<()> {
 }
 
 #[test]
-fn narrowing_uses_try_from() -> Result<()> {
+fn narrowing_uses_try_from() -> TestResult {
     let map = isom()?;
     let found = map
         .symbols
@@ -120,7 +125,7 @@ fn narrowing_uses_try_from() -> Result<()> {
 }
 
 #[test]
-fn narrowing_from_a_bare_handle_goes_through_get() -> Result<()> {
+fn narrowing_from_a_bare_handle_goes_through_get() -> TestResult {
     let map = isom()?;
     let id = map
         .symbols
@@ -139,7 +144,7 @@ fn narrowing_from_a_bare_handle_goes_through_get() -> Result<()> {
 }
 
 #[test]
-fn a_missing_symbol_is_none() -> Result<()> {
+fn a_missing_symbol_is_none() -> TestResult {
     let map = isom()?;
 
     assert!(map.symbols.find_by_code(Code::new(9999, 0, 0)).is_none());
@@ -151,7 +156,7 @@ fn a_missing_symbol_is_none() -> Result<()> {
 /// The handle is `Copy` and outlives the borrow the lookup took, so the set can
 /// be mutated once it has been extracted.
 #[test]
-fn the_handle_outlives_the_borrow() -> Result<()> {
+fn the_handle_outlives_the_borrow() -> TestResult {
     let mut map = isom()?;
     let id = map
         .symbols
@@ -169,7 +174,7 @@ fn the_handle_outlives_the_borrow() -> Result<()> {
 }
 
 #[test]
-fn a_color_lookup_yields_the_handle_and_the_color() -> Result<()> {
+fn a_color_lookup_yields_the_handle_and_the_color() -> TestResult {
     let map = isom()?;
     let name = map
         .colors
@@ -194,7 +199,7 @@ fn a_color_lookup_yields_the_handle_and_the_color() -> Result<()> {
 }
 
 #[test]
-fn color_narrowing_uses_try_from() -> Result<()> {
+fn color_narrowing_uses_try_from() -> TestResult {
     let map = isom()?;
     let spot = map
         .colors

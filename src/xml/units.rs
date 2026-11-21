@@ -1,6 +1,7 @@
 //! The file's integer units: coordinates and lengths in micrometres of paper.
 
-use crate::{Error, NonNegativeF64, Result};
+use crate::NonNegativeF64;
+use crate::xml::{Error, Result};
 use geo_types::Coord;
 
 /// The largest coordinate, in millimetres, the file's integer micrometres hold.

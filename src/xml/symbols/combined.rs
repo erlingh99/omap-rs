@@ -7,7 +7,7 @@ use crate::symbols::{
 };
 use crate::xml::attrs::{parse_attr, parse_attr_raw, try_get_attr_raw};
 use crate::xml::symbols::{SymbolPosition, UnresolvedPart};
-use crate::{Error, OmapSection, Result};
+use crate::xml::{Error, Result, Section};
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 
@@ -125,7 +125,7 @@ impl CombinedAreaSymbol {
                     break;
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::CombinedAreaSymbol));
+                    return Err(Error::UnexpectedEof(Section::CombinedAreaSymbol));
                 }
                 _ => {}
             }
@@ -175,7 +175,7 @@ impl CombinedAreaSymbol {
                     return Err(Error::EmptyPrivatePart);
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::PrivatePart));
+                    return Err(Error::UnexpectedEof(Section::PrivatePart));
                 }
                 _ => {}
             }
@@ -190,7 +190,7 @@ impl CombinedAreaSymbol {
                     return Ok(());
                 }
                 Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::SkippedPart));
+                    return Err(Error::UnexpectedEof(Section::SkippedPart));
                 }
                 _ => {}
             }

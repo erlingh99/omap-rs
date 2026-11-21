@@ -1,13 +1,14 @@
 //! The `<colors>` section: the color set in priority order.
 
 use super::read_text;
+use crate::NonNegativeF64;
 use crate::colors::{
     Cmyk, CmykMode, Color, ColorComponent, ColorSet, MixedColor, Rgb, RgbMode, SpotColor,
     SymbolColor,
 };
 use crate::utils::UnitF64;
 use crate::xml::attrs::{parse_attr, parse_attr_raw, try_get_attr_raw};
-use crate::{Error, NonNegativeF64, OmapSection, Result};
+use crate::xml::{Error, Result, Section};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
 
@@ -32,7 +33,7 @@ pub(crate) fn read_color_set<R: std::io::BufRead>(
                 }
             }
             Event::Eof => {
-                return Err(Error::UnexpectedEof(OmapSection::ColorSet));
+                return Err(Error::UnexpectedEof(Section::ColorSet));
             }
             _ => (),
         }
@@ -261,7 +262,7 @@ fn read_color<R: std::io::BufRead>(
                                 break;
                             }
                             Event::Eof => {
-                                return Err(Error::UnexpectedEof(OmapSection::Color));
+                                return Err(Error::UnexpectedEof(Section::Color));
                             }
                             _ => (),
                         }
@@ -272,7 +273,7 @@ fn read_color<R: std::io::BufRead>(
             Event::End(bytes_end) if bytes_end.local_name().as_ref() == "color" => {
                 break;
             }
-            Event::Eof => return Err(Error::UnexpectedEof(OmapSection::Color)),
+            Event::Eof => return Err(Error::UnexpectedEof(Section::Color)),
             _ => (),
         }
     }
