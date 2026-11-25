@@ -6,6 +6,7 @@ use crate::utils::UnitF64;
 use crate::view::{Grid, GridAlignment, GridDisplay, GridUnit, TemplateVisibility, View};
 use crate::xml::attrs::{parse_attr_raw, try_get_attr_raw};
 use crate::xml::{Error, Result};
+use geo_types::Coord;
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::{Reader, Writer};
 use std::str::FromStr;
@@ -226,18 +227,17 @@ impl View {
             .ok()
             .flatten()
             .unwrap_or(0.0);
-        self.view_centre.x = crate::xml::units::from_file_value(
-            try_get_attr_raw(bs, "position_x")
+        // y down in the file, like the objects' coordinates.
+        self.view_centre = crate::xml::units::from_file_coords(Coord {
+            x: try_get_attr_raw(bs, "position_x")
                 .ok()
                 .flatten()
                 .unwrap_or(0),
-        );
-        self.view_centre.y = crate::xml::units::from_file_value(
-            try_get_attr_raw(bs, "position_y")
+            y: try_get_attr_raw(bs, "position_y")
                 .ok()
                 .flatten()
                 .unwrap_or(0),
-        );
+        });
 
         let mut buf = Vec::new();
         loop {
@@ -299,8 +299,8 @@ impl View {
 
         self.grid.write(writer)?;
 
-        let position_x = crate::xml::units::to_file_value(self.view_centre.x)?;
-        let position_y = crate::xml::units::to_file_value(self.view_centre.y)?;
+        let position = crate::xml::units::to_file_coords(self.view_centre)?;
+        let (position_x, position_y) = (position.x, position.y);
         let mut mv = BytesStart::new("map_view").with_attributes([
             ("zoom", format!("{:.4}", self.zoom.get()).as_str()),
             ("position_x", position_x.to_string().as_str()),

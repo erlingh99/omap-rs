@@ -10,6 +10,8 @@ Or you can start from an already existing file with `Omap::from_path`.
 ## File formats
 `Omap` is the map's domain model; a file format is one way to store it. `Omap::from_path` and `Omap::to_file` choose the format by the file's extension through `omap::format`, and `omap::format::all()` lists every format compiled in, for an application's open and save dialogs. The OpenOrienteering Mapper XML format (`.omap` and `.xmap`) is `omap::xml`, whose `read` and `write` also work on any reader or writer. It is the default `xml` feature; an application that only uses the domain model, or only serde, can turn it off, which also removes the bundled `default_*` maps.
 
+The OCAD format (`.ocd`, versions 12 and 2018) is `omap::ocd`, behind the `ocd` feature, which is off by default. OCAD and the map model each describe things the other cannot, so `ocd::read` and `ocd::write` never fail on such a feature: they skip or approximate it and return a list of warnings beside the result.
+
 ## Geo-referencing
 With the `geo_ref`-feature automatic geo-referencing with magnetic north and scale factor calculation is enabled and done with the `omap::geo_referencing::GeoRef::initialize` function. \
 It is not enabled by default because of the extra dependencies needed (Proj4rs for coordinate projections, WMM for magnetic north calcualtion and Chrono for time as the magnetic north changes over time). Without this feature the georeferencing must be done by hand.

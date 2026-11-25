@@ -88,10 +88,11 @@ impl TextSymbol {
                                 let sy = try_get_attr_raw(&e, "shadow_y_offset")?.unwrap_or(0);
                                 FramingMode::ShadowFraming(ShadowFraming {
                                     color: framing_color,
-                                    shadow_offset: Coord {
-                                        x: crate::xml::units::from_file_value(sx),
-                                        y: crate::xml::units::from_file_value(sy),
-                                    },
+                                    // y down in the file, as it is written.
+                                    shadow_offset: crate::xml::units::from_file_coords(Coord {
+                                        x: sx,
+                                        y: sy,
+                                    }),
                                 })
                             }
                             _ => FramingMode::NoFraming,

@@ -12,6 +12,8 @@ pub mod format;
 pub mod geo_referencing;
 /// Map objects: points, lines, areas, and text.
 pub mod objects;
+#[cfg(feature = "ocd")]
+pub mod ocd;
 /// The top-level OMAP document type.
 pub mod omap;
 /// Map parts (layers) and their contained objects.

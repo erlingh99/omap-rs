@@ -126,6 +126,17 @@ pub struct Removed<Id, T> {
 }
 
 impl<Id: Copy, T> Removed<Id, T> {
+    /// A removal made of its parts, for a caller that kept them apart, such
+    /// as an undo history, or that puts the item back at another position.
+    /// [`Collection::restore`] still takes it only for a removed handle.
+    pub fn new(id: Id, position: usize, value: Arc<T>) -> Self {
+        Self {
+            id,
+            position,
+            value,
+        }
+    }
+
     /// The handle that named the item, reserved until it is restored.
     pub fn id(&self) -> Id {
         self.id
@@ -827,6 +838,26 @@ mod tests {
 
         assert_eq!(order(&collection), ["a", "b", "c"]);
         assert_eq!(value(&collection, b), Some("b"));
+        assert_consistent(&collection);
+    }
+
+    #[test]
+    fn a_removal_rebuilt_from_its_parts_restores_at_the_position_it_names() {
+        let mut collection = collection_of(&["a", "b", "c"]);
+        let a = id_at(&collection, 0);
+        let removed = collection.remove(a).unwrap();
+        let (item, live) = (Arc::clone(removed.value()), id_at(&collection, 0));
+
+        assert!(
+            collection
+                .restore(super::Removed::new(live, 0, Arc::clone(&item)))
+                .is_err(),
+            "a live handle"
+        );
+        collection.restore(super::Removed::new(a, 2, item)).unwrap();
+
+        assert_eq!(order(&collection), ["b", "c", "a"]);
+        assert_eq!(value(&collection, a), Some("a"));
         assert_consistent(&collection);
     }
 

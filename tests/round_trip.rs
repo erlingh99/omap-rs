@@ -300,3 +300,36 @@ fn no_reference_degrades_to_the_unknown_sentinel() -> TestResult {
     }
     Ok(())
 }
+
+/// The view centre and a text shadow's offset are y up in the map, as the
+/// objects are, and y down in the file.
+#[test]
+fn the_view_centre_and_text_shadows_are_y_up_like_the_objects() -> TestResult {
+    use omap::Code;
+    use omap::symbols::{FramingMode, ShadowFraming, TextSymbol};
+    let mut map = omap::Omap::new(std::num::NonZeroU32::new(15_000).ok_or("scale")?);
+    map.view.view_centre = geo_types::Coord { x: 1., y: 2. };
+    let mut label = TextSymbol::new(Code::new(900, 0, 0), "Label");
+    label.framing_mode = Some(FramingMode::ShadowFraming(ShadowFraming {
+        color: omap::colors::SymbolColor::RegistrationBlack,
+        shadow_offset: geo_types::Coord { x: 0.5, y: 0.25 },
+    }));
+    map.symbols.push(label);
+
+    let mut out = Vec::new();
+    omap::xml::write(&map, &mut out)?;
+    let xml = String::from_utf8(out.clone())?;
+    assert!(xml.contains(r#"position_y="-2000""#), "{xml}");
+    assert!(xml.contains(r#"shadow_y_offset="-250""#), "{xml}");
+
+    let again = omap::xml::read(out.as_slice())?;
+    assert_eq!(again.view.view_centre, map.view.view_centre);
+    let Some(omap::symbols::Symbol::Text(text)) = again.symbols.values().next() else {
+        return Err("no text symbol".into());
+    };
+    let Some(FramingMode::ShadowFraming(shadow)) = &text.framing_mode else {
+        return Err("no shadow".into());
+    };
+    assert_eq!(shadow.shadow_offset, geo_types::Coord { x: 0.5, y: 0.25 });
+    Ok(())
+}

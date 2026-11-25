@@ -25,16 +25,22 @@ pub trait Format: Send + Sync {
 
     /// Write `map`.
     ///
+    /// What the format cannot hold exactly is approximated or left out, as
+    /// that format's module documents; a module may also offer a write that
+    /// reports what was approximated, such as `ocd::write`.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the map cannot be expressed in this format, or the
-    /// output cannot be written.
+    /// Returns an error if the map cannot be written in this format at all,
+    /// or the output cannot be written.
     fn write(&self, map: &Omap, writer: &mut dyn Write) -> Result<(), Error>;
 }
 
 static FORMATS: &[&dyn Format] = &[
     #[cfg(feature = "xml")]
     &crate::xml::Xml,
+    #[cfg(feature = "ocd")]
+    &crate::ocd::Ocd,
 ];
 
 /// Every format compiled into this build.
@@ -58,6 +64,10 @@ pub enum Error {
     #[cfg(feature = "xml")]
     #[error(transparent)]
     Xml(crate::xml::Error),
+    /// The OCAD format.
+    #[cfg(feature = "ocd")]
+    #[error(transparent)]
+    Ocd(crate::ocd::Error),
     /// Reading or writing the file itself.
     #[error(transparent)]
     Io(#[from] std::io::Error),

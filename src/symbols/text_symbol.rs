@@ -46,7 +46,8 @@ pub struct LineFraming {
 pub struct ShadowFraming {
     /// Color of the shadow.
     pub color: SymbolColor,
-    /// Offset of the shadow from the text.
+    /// Offset of the shadow from the text, in mm: y up, as map coordinates
+    /// are.
     pub shadow_offset: Coord<f64>,
 }
 
