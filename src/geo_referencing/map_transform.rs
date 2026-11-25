@@ -325,7 +325,7 @@ mod tests {
 
     fn rotated() -> MapTransform {
         map_transform(
-            CrsType::Utm(UtmCode::new(33).unwrap()),
+            CrsType::Utm(UtmCode::new(33).expect("33 is a valid UTM zone")),
             coord! { x: 500_000., y: 6_600_000. },
         )
     }
@@ -387,8 +387,12 @@ mod tests {
     fn every_geometry_round_trips_through_wgs84() {
         fn round_trip<G: Transformable + Clone>(geometry: G) {
             let transform = rotated();
-            let wgs84 = transform.to_wgs84(geometry.clone()).unwrap();
-            let back = transform.from_wgs84(wgs84).unwrap();
+            let wgs84 = transform
+                .to_wgs84(geometry.clone())
+                .expect("the geometry projects to WGS84");
+            let back = transform
+                .from_wgs84(wgs84)
+                .expect("the WGS84 geometry projects back");
             assert_close(&coords(geometry), &coords(back), 1e-6);
         }
         for_every_geometry!(round_trip);

@@ -680,15 +680,23 @@ mod tests {
     /// with a removed symbol, and a removed color some symbol drew with.
     fn dangling_map() -> Result<Omap> {
         let mut map = Omap::from_bytes(super::DEFAULT_ISOM_15000)?;
-        let (point, _) = map.symbols.iter_point_symbols().next().unwrap();
+        let (point, _) = map
+            .symbols
+            .iter_point_symbols()
+            .next()
+            .expect("the default map contains a point symbol");
         let _id = map
             .parts
             .at_mut(0)
-            .unwrap()
+            .expect("the default map has a first part")
             .objects
             .push(PointObject::new(Some(point), Point::new(1.0, 2.0)));
         let _removed = map.symbols.remove(point);
-        let color = map.colors.at(0).unwrap().id();
+        let color = map
+            .colors
+            .at(0)
+            .expect("the default map has a first color")
+            .id();
         let _removed = map.colors.remove(color);
         assert!(map.validate().is_err(), "the map dangles");
         Ok(map)
