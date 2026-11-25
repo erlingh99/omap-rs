@@ -1,11 +1,11 @@
-use quick_xml::{
-    Reader, Writer, XmlVersion,
-    events::{BytesEnd, BytesStart, BytesText, Event},
-};
+//! Element text content.
 
-use crate::Result;
+use crate::xml::Result;
+use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+use quick_xml::{Reader, Writer, XmlVersion};
 
-pub(super) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<String> {
+/// The text content of the element just started, up to its first child or end.
+pub(in crate::xml) fn read_text<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<String> {
     let mut notes = String::new();
 
     let mut buf = Vec::new();
@@ -26,7 +26,11 @@ pub(super) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Strin
     Ok(notes)
 }
 
-pub(super) fn write<W: std::io::Write>(notes: &str, writer: &mut Writer<W>) -> Result<()> {
+/// A `<notes>` element holding `notes`.
+pub(in crate::xml) fn write_notes<W: std::io::Write>(
+    notes: &str,
+    writer: &mut Writer<W>,
+) -> Result<()> {
     writer.write_event(Event::Start(BytesStart::new("notes")))?;
     writer.write_event(Event::Text(BytesText::new(notes)))?;
     writer.write_event(Event::End(BytesEnd::new("notes")))?;

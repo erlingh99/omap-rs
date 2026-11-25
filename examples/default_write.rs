@@ -11,13 +11,13 @@ use geo_types::{Coord, LineString};
 #[cfg(feature = "geo_ref")]
 use omap::geo_referencing::CrsType;
 use omap::{
-    Code, Error, Omap,
+    Code, Omap,
     colors::Color,
     objects::LineObject,
     symbols::{PublicOrPrivateSymbol, Symbol},
 };
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "geo_ref")]
     let mut map = {
         let proj_center = Coord {
@@ -113,5 +113,6 @@ fn main() -> Result<(), Error> {
 
     println!("Does the map pass validation: {:?}", map.validate());
 
-    map.to_file("./test_write.omap")
+    map.to_file("./test_write.omap")?;
+    Ok(())
 }

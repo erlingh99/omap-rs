@@ -8,16 +8,7 @@ pub use template_transform::{
     AdjustmentState, Matrix3x3, PassPoint, TemplateTransform, TemplateTransformations,
 };
 
-use quick_xml::{
-    Reader, Writer,
-    events::{BytesEnd, BytesStart, Event},
-};
-
-use crate::{
-    Error, NonNegativeF64, OmapSection, Result,
-    utils::{parse_attr_raw, try_get_attr_raw},
-    view::TemplateVisibility,
-};
+use crate::{NonNegativeF64, view::TemplateVisibility};
 
 /// Default display settings for newly added templates.
 #[derive(Debug, Clone)]
@@ -44,50 +35,6 @@ impl Default for TemplateDefaults {
     }
 }
 
-impl TemplateDefaults {
-    fn parse_attrs(bs: &BytesStart<'_>) -> Self {
-        let mut d = Self::default();
-        for attr in bs.attributes().filter_map(std::result::Result::ok) {
-            match attr.key.local_name().as_ref() {
-                "use_meters_per_pixel" => {
-                    d.use_meters_per_pixel = attr.as_bool().unwrap_or(d.use_meters_per_pixel);
-                }
-                "meters_per_pixel" => {
-                    d.meters_per_pixel = parse_attr_raw(attr.value)
-                        .unwrap_or_else(|_| d.meters_per_pixel.get())
-                        .try_into()
-                        .unwrap_or_default();
-                }
-                "dpi" => {
-                    d.dpi = parse_attr_raw(attr.value)
-                        .unwrap_or_else(|_| d.dpi.get())
-                        .try_into()
-                        .unwrap_or_default();
-                }
-                "scale" => d.scale = parse_attr_raw(attr.value).unwrap_or(d.scale),
-                _ => {}
-            }
-        }
-        d
-    }
-
-    fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        writer.write_event(Event::Empty(BytesStart::new("defaults").with_attributes([
-            (
-                "use_meters_per_pixel",
-                self.use_meters_per_pixel.to_string().as_str(),
-            ),
-            (
-                "meters_per_pixel",
-                format!("{:.2}", self.meters_per_pixel.get()).as_str(),
-            ),
-            ("dpi", format!("{:.2}", self.dpi.get()).as_str()),
-            ("scale", self.scale.to_string().as_str()),
-        ])))?;
-        Ok(())
-    }
-}
-
 /// A template entry pairing a template with its visibility settings.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -96,13 +43,6 @@ pub struct TemplateEntry {
     pub template: Template,
     /// The visibility settings for this template.
     pub visibility: TemplateVisibility,
-}
-
-impl TemplateEntry {
-    fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<TemplateVisibility> {
-        self.template.write(writer)?;
-        Ok(self.visibility)
-    }
 }
 
 /// All templates attached to the map, plus default display settings.
@@ -151,9 +91,9 @@ impl Templates {
     ///
     /// Returns any error produced by `transform`. The collection is unchanged
     /// on failure.
-    pub fn try_transform<E, F>(&mut self, transform: F) -> std::result::Result<(), E>
+    pub fn try_transform<E, F>(&mut self, transform: F) -> Result<(), E>
     where
-        F: Fn(geo_types::Coord) -> std::result::Result<geo_types::Coord, E>,
+        F: Fn(geo_types::Coord) -> Result<geo_types::Coord, E>,
     {
         let mut transformed = self.clone();
         for entry in &mut transformed.template_entries {
@@ -161,74 +101,5 @@ impl Templates {
         }
         *self = transformed;
         Ok(())
-    }
-
-    pub(crate) fn parse<R: std::io::BufRead>(
-        reader: &mut Reader<R>,
-        event: &BytesStart<'_>,
-    ) -> Result<Self> {
-        let first_front_template = try_get_attr_raw(event, "first_front_template")?.unwrap_or(0);
-
-        let mut templates = Vec::new();
-        let mut defaults = TemplateDefaults::default();
-
-        let mut buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buf)? {
-                Event::Start(bs) => match bs.local_name().as_ref() {
-                    "template" => {
-                        templates.push(Template::parse(reader, &bs)?);
-                    }
-                    "defaults" => {
-                        defaults = TemplateDefaults::parse_attrs(&bs);
-                    }
-                    _ => {}
-                },
-                Event::End(be) if be.local_name().as_ref() == "templates" => break,
-                Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::Templates));
-                }
-                _ => {}
-            }
-        }
-
-        let template_entries = templates
-            .into_iter()
-            .map(|t| TemplateEntry {
-                template: t,
-                visibility: TemplateVisibility::default(),
-            })
-            .collect();
-
-        Ok(Self {
-            template_entries,
-            first_front_template,
-            defaults,
-        })
-    }
-
-    pub(crate) fn write<W: std::io::Write>(
-        &self,
-        writer: &mut Writer<W>,
-    ) -> Result<Vec<TemplateVisibility>> {
-        writer.write_event(Event::Start(BytesStart::new("templates").with_attributes(
-            [
-                ("count", self.template_entries.len().to_string().as_str()),
-                (
-                    "first_front_template",
-                    self.first_front_template.to_string().as_str(),
-                ),
-            ],
-        )))?;
-        writer.get_mut().write_all(b"\n")?;
-        let mut visibilities = Vec::with_capacity(self.len());
-        for entry in &self.template_entries {
-            visibilities.push(entry.write(writer)?);
-            writer.get_mut().write_all(b"\n")?;
-        }
-        self.defaults.write(writer)?;
-        writer.get_mut().write_all(b"\n")?;
-        writer.write_event(Event::End(BytesEnd::new("templates")))?;
-        Ok(visibilities)
     }
 }

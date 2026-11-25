@@ -1,16 +1,6 @@
 use geo_types::Coord;
-use quick_xml::{
-    Reader, Writer,
-    events::{BytesEnd, BytesStart, Event},
-};
 
-use crate::{
-    Error, OmapSection, Result,
-    utils::{
-        from_file_coords, parse_attr_raw, to_file_coords, transform_position, try_get_attr_raw,
-        try_transform_position,
-    },
-};
+use crate::utils::{transform_position, try_transform_position};
 
 /// A 3×3 matrix stored in row-major order.
 #[derive(Debug, Clone)]
@@ -116,9 +106,9 @@ impl TemplateTransformations {
         self.adjustment = AdjustmentState::AdjustmentDirty;
     }
 
-    pub(crate) fn try_transform<E, F>(&mut self, transform: F) -> std::result::Result<(), E>
+    pub(crate) fn try_transform<E, F>(&mut self, transform: F) -> Result<(), E>
     where
-        F: Fn(Coord) -> std::result::Result<Coord, E>,
+        F: Fn(Coord) -> Result<Coord, E>,
     {
         let mut transformed = self.clone();
         transformed.active_transform.try_transform(&transform)?;
@@ -134,89 +124,6 @@ impl TemplateTransformations {
         *self = transformed;
         Ok(())
     }
-
-    pub(crate) fn parse<R: std::io::BufRead>(
-        reader: &mut Reader<R>,
-        bs: &BytesStart<'_>,
-    ) -> Result<Self> {
-        let mut adjustment = AdjustmentState::NoAdjustment;
-
-        for attr in bs.attributes().filter_map(std::result::Result::ok) {
-            match attr.key.local_name().as_ref() {
-                "adjusted" if attr.as_bool().unwrap_or(false) => {
-                    adjustment = AdjustmentState::Adjusted;
-                }
-                "adjustment_dirty" if attr.as_bool().unwrap_or(false) => {
-                    adjustment = AdjustmentState::AdjustmentDirty;
-                }
-                _ => {}
-            }
-        }
-
-        let mut active_transform = TemplateTransform::default();
-        let mut other_transform = TemplateTransform::default();
-        let mut passpoints = Vec::new();
-        let mut map_to_template = None;
-        let mut template_to_map = None;
-        let mut template_to_map_other = None;
-
-        let mut buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buf)? {
-                Event::Start(child) => match child.local_name().as_ref() {
-                    "transformation" => {
-                        let t = TemplateTransform::parse(&child);
-                        if let Some(role) = child
-                            .attributes()
-                            .filter_map(std::result::Result::ok)
-                            .find(|a| a.key.local_name().as_ref() == "role")
-                        {
-                            match role.value.as_ref() {
-                                "other" => other_transform = t,
-                                _ => active_transform = t,
-                            }
-                        }
-                    }
-                    "passpoint" => {
-                        passpoints.push(PassPoint::parse(reader)?);
-                    }
-                    "matrix" => {
-                        let m = Matrix3x3::parse(reader)?;
-                        if let Some(role) = child
-                            .attributes()
-                            .filter_map(std::result::Result::ok)
-                            .find(|a| a.key.local_name().as_ref() == "role")
-                        {
-                            match role.value.as_ref() {
-                                "map_to_template" => map_to_template = Some(m),
-                                "template_to_map" => template_to_map = Some(m),
-                                "template_to_map_other" => template_to_map_other = Some(m),
-                                _ => {}
-                            }
-                        }
-                    }
-                    _ => {}
-                },
-                Event::End(be) if be.local_name().as_ref() == "transformations" => {
-                    break;
-                }
-                Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::TemplateTransformations));
-                }
-                _ => {}
-            }
-        }
-
-        Ok(Self {
-            adjustment,
-            active_transform,
-            other_transform,
-            passpoints,
-            map_to_template,
-            template_to_map,
-            template_to_map_other,
-        })
-    }
 }
 
 impl TemplateTransform {
@@ -231,9 +138,9 @@ impl TemplateTransform {
         self.template_scale.y *= scale_factor;
     }
 
-    pub(crate) fn try_transform<E, F>(&mut self, transform: F) -> std::result::Result<(), E>
+    pub(crate) fn try_transform<E, F>(&mut self, transform: F) -> Result<(), E>
     where
-        F: Fn(Coord) -> std::result::Result<Coord, E>,
+        F: Fn(Coord) -> Result<Coord, E>,
     {
         let (position, rotation, scale_factor) =
             try_transform_position(self.template_pos, transform)?;
@@ -241,45 +148,6 @@ impl TemplateTransform {
         self.template_rotation += rotation;
         self.template_scale.x *= scale_factor;
         self.template_scale.y *= scale_factor;
-        Ok(())
-    }
-
-    pub(crate) fn parse(bs: &BytesStart<'_>) -> Self {
-        let mut t = Self::default();
-        let mut pos = Coord::default();
-        for attr in bs.attributes().filter_map(std::result::Result::ok) {
-            match attr.key.local_name().as_ref() {
-                "x" => pos.x = parse_attr_raw::<i32>(attr.value).unwrap_or(0),
-                "y" => pos.y = parse_attr_raw::<i32>(attr.value).unwrap_or(0),
-                "rotation" => t.template_rotation = parse_attr_raw(attr.value).unwrap_or(0.),
-                "scale_x" => t.template_scale.x = parse_attr_raw(attr.value).unwrap_or(1.),
-                "scale_y" => t.template_scale.y = parse_attr_raw(attr.value).unwrap_or(1.),
-                "shear" => t.template_shear = parse_attr_raw(attr.value).unwrap_or(0.),
-                _ => {}
-            }
-        }
-        t.template_pos = from_file_coords(pos);
-        t
-    }
-
-    pub(crate) fn write<W: std::io::Write>(
-        &self,
-        writer: &mut Writer<W>,
-        role: &str,
-    ) -> Result<()> {
-        let pos = to_file_coords(self.template_pos)?;
-        let mut start = BytesStart::new("transformation").with_attributes([
-            ("role", role),
-            ("x", pos.x.to_string().as_str()),
-            ("y", pos.y.to_string().as_str()),
-            ("scale_x", self.template_scale.x.to_string().as_str()),
-            ("scale_y", self.template_scale.y.to_string().as_str()),
-            ("rotation", self.template_rotation.to_string().as_str()),
-        ]);
-        if self.template_shear != 0.0 {
-            start.push_attribute(("shear", self.template_shear.to_string().as_str()));
-        }
-        writer.write_event(Event::Empty(start))?;
         Ok(())
     }
 }
@@ -296,9 +164,9 @@ impl PassPoint {
         }
     }
 
-    pub(crate) fn try_transform<E, F>(&mut self, transform: F) -> std::result::Result<(), E>
+    pub(crate) fn try_transform<E, F>(&mut self, transform: F) -> Result<(), E>
     where
-        F: Fn(Coord) -> std::result::Result<Coord, E>,
+        F: Fn(Coord) -> Result<Coord, E>,
     {
         let src_coord = transform(self.src_coord)?;
         let dest_coord = transform(self.dest_coord)?;
@@ -313,133 +181,4 @@ impl PassPoint {
         self.calculated_coord = calculated_coord;
         Ok(())
     }
-
-    pub(crate) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Self> {
-        let mut src = None;
-        let mut dest = None;
-        let mut calc = None;
-
-        let mut buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buf)? {
-                Event::Start(child) => match child.local_name().as_ref() {
-                    "source" => src = parse_inner_coord(reader).ok(),
-                    "destination" => dest = parse_inner_coord(reader).ok(),
-                    "calculated" => calc = parse_inner_coord(reader).ok(),
-                    _ => {}
-                },
-                Event::End(be) if be.local_name().as_ref() == "passpoint" => {
-                    break;
-                }
-                Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::PassPoint));
-                }
-                _ => {}
-            }
-        }
-
-        if let Some(src_coord) = src
-            && let Some(dest_coord) = dest
-            && let Some(calculated_coord) = calc
-        {
-            Ok(Self {
-                src_coord,
-                dest_coord,
-                calculated_coord,
-            })
-        } else {
-            Err(Error::TemplateError)
-        }
-    }
-
-    pub(crate) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        writer
-            .write_event(Event::Start(BytesStart::new("passpoint").with_attributes(
-                [("error", format!("{:.5}", self.error()).as_str())],
-            )))?;
-        write_coord_wrapper(writer, "source", &self.src_coord)?;
-        write_coord_wrapper(writer, "destination", &self.dest_coord)?;
-        write_coord_wrapper(writer, "calculated", &self.calculated_coord)?;
-
-        writer.write_event(Event::End(BytesEnd::new("passpoint")))?;
-        Ok(())
-    }
-}
-
-impl Matrix3x3 {
-    pub(crate) fn parse<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Self> {
-        let mut values = [0.; 9];
-        let mut i = 0;
-        let mut buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buf)? {
-                Event::Start(child) if child.local_name().as_ref() == "element" => {
-                    values[i] = try_get_attr_raw(&child, "value")?.unwrap_or(0.);
-                    i += 1;
-                }
-                Event::End(be) if be.local_name().as_ref() == "matrix" => break,
-                Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::Matrix));
-                }
-                _ => {}
-            }
-        }
-
-        Ok(Self(values))
-    }
-
-    pub(crate) fn write<W: std::io::Write>(
-        &self,
-        writer: &mut Writer<W>,
-        role: &str,
-    ) -> Result<()> {
-        writer.write_event(Event::Start(BytesStart::new("matrix").with_attributes([
-            ("role", role),
-            ("n", "3"),
-            ("m", "3"),
-        ])))?;
-        for val in self.0 {
-            writer.write_event(Event::Empty(
-                BytesStart::new("element").with_attributes([("value", format!("{val}").as_str())]),
-            ))?;
-        }
-        writer.write_event(Event::End(BytesEnd::new("matrix")))?;
-        Ok(())
-    }
-}
-
-fn write_coord_wrapper<W: std::io::Write>(
-    writer: &mut Writer<W>,
-    wrapper_name: &str,
-    coord: &Coord,
-) -> Result<()> {
-    let coord = to_file_coords(*coord)?;
-    writer.write_event(Event::Start(BytesStart::new(wrapper_name)))?;
-    writer.write_event(Event::Empty(BytesStart::new("coord").with_attributes([
-        ("x", format!("{}", coord.x).as_str()),
-        ("y", format!("{}", coord.y).as_str()),
-    ])))?;
-    writer.write_event(Event::End(BytesEnd::new(wrapper_name)))?;
-    Ok(())
-}
-
-fn parse_inner_coord<R: std::io::BufRead>(reader: &mut Reader<R>) -> Result<Coord> {
-    let mut coord = Coord::<i32>::zero();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf)? {
-            Event::Start(bs) if bs.local_name().as_ref() == "coord" => {
-                coord = Coord {
-                    x: try_get_attr_raw(&bs, "x")?.unwrap_or(0),
-                    y: try_get_attr_raw(&bs, "y")?.unwrap_or(0),
-                };
-            }
-            Event::End(_) => break,
-            Event::Eof => {
-                return Err(Error::UnexpectedEof(OmapSection::CoordinateWrapper));
-            }
-            _ => {}
-        }
-    }
-    Ok(from_file_coords(coord))
 }

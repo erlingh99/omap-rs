@@ -1,16 +1,7 @@
 use std::path::PathBuf;
 
-use quick_xml::{
-    Reader, Writer,
-    events::{BytesEnd, BytesStart, BytesText, Event},
-};
-
 use super::template_transform::{AdjustmentState, TemplateTransformations};
-use crate::{
-    Error, OmapSection, Result,
-    templates::template_transform::{PassPoint, TemplateTransform},
-    utils::parse_attr_raw,
-};
+use crate::templates::template_transform::{PassPoint, TemplateTransform};
 
 /// A template attached to the map. Each variant carries type-specific data.
 #[derive(Debug, Clone)]
@@ -56,22 +47,6 @@ pub struct TrackTemplate {
     pub projected_crs_spec: String,
 }
 
-impl TrackTemplate {
-    fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        if !self.track_crs_spec.is_empty() {
-            writer.write_event(Event::Start(BytesStart::new("track_crs_spec")))?;
-            writer.write_event(Event::Text(BytesText::new(&self.track_crs_spec)))?;
-            writer.write_event(Event::End(BytesEnd::new("track_crs_spec")))?;
-        }
-        if !self.projected_crs_spec.is_empty() {
-            writer.write_event(Event::Start(BytesStart::new("projected_crs_spec")))?;
-            writer.write_event(Event::Text(BytesText::new(&self.projected_crs_spec)))?;
-            writer.write_event(Event::End(BytesEnd::new("projected_crs_spec")))?;
-        }
-        Ok(())
-    }
-}
-
 /// A geospatial raster data template (via GDAL).
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -80,15 +55,6 @@ pub struct GdalTemplate {
     pub common: TemplateCommon,
     /// Coordinate reference system of the raster data.
     pub crs_spec: String,
-}
-
-impl GdalTemplate {
-    fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        writer.write_event(Event::Start(BytesStart::new("crs_spec")))?;
-        writer.write_event(Event::Text(BytesText::new(&self.crs_spec)))?;
-        writer.write_event(Event::End(BytesEnd::new("crs_spec")))?;
-        Ok(())
-    }
 }
 
 /// A geospatial vector data template (via OGR).
@@ -103,27 +69,6 @@ pub struct OgrTemplate {
     pub track_crs_spec: String,
     /// Projected coordinate reference system used for the data.
     pub projected_crs_spec: String,
-}
-
-impl OgrTemplate {
-    fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        if !self.crs_spec.is_empty() {
-            writer.write_event(Event::Start(BytesStart::new("crs_spec")))?;
-            writer.write_event(Event::Text(BytesText::new(&self.crs_spec)))?;
-            writer.write_event(Event::End(BytesEnd::new("crs_spec")))?;
-        }
-        if !self.track_crs_spec.is_empty() {
-            writer.write_event(Event::Start(BytesStart::new("track_crs_spec")))?;
-            writer.write_event(Event::Text(BytesText::new(&self.track_crs_spec)))?;
-            writer.write_event(Event::End(BytesEnd::new("track_crs_spec")))?;
-        }
-        if !self.projected_crs_spec.is_empty() {
-            writer.write_event(Event::Start(BytesStart::new("projected_crs_spec")))?;
-            writer.write_event(Event::Text(BytesText::new(&self.projected_crs_spec)))?;
-            writer.write_event(Event::End(BytesEnd::new("projected_crs_spec")))?;
-        }
-        Ok(())
-    }
 }
 
 impl Template {
@@ -175,9 +120,9 @@ impl Template {
     /// # Errors
     ///
     /// Returns any error produced by `transform`.
-    pub fn try_transform<E, F>(&mut self, transform: F) -> std::result::Result<(), E>
+    pub fn try_transform<E, F>(&mut self, transform: F) -> Result<(), E>
     where
-        F: Fn(geo_types::Coord) -> std::result::Result<geo_types::Coord, E>,
+        F: Fn(geo_types::Coord) -> Result<geo_types::Coord, E>,
     {
         if self.common().is_georeferenced {
             return Ok(());
@@ -197,161 +142,6 @@ impl Template {
             Self::Gdal(_) => "GdalTemplate",
             Self::Ogr(_) => "OgrTemplate",
         }
-    }
-
-    pub(super) fn parse<R: std::io::BufRead>(
-        reader: &mut Reader<R>,
-        bs: &BytesStart<'_>,
-    ) -> Result<Self> {
-        let mut template_type = String::new();
-        let mut is_open = false;
-        let mut name = String::new();
-        let mut path = PathBuf::new();
-        let mut relpath = PathBuf::new();
-        let mut is_georeferenced = false;
-        let mut group = None;
-
-        for attr in bs.attributes().filter_map(std::result::Result::ok) {
-            match attr.key.local_name().as_ref() {
-                "type" => template_type = parse_attr_raw(attr.value).unwrap_or(template_type),
-                "open" => is_open = attr.as_bool().unwrap_or(false),
-                "name" => name = parse_attr_raw(attr.value).unwrap_or(name),
-                "path" => path = parse_attr_raw(attr.value).unwrap_or(path),
-                "relpath" => relpath = parse_attr_raw(attr.value).unwrap_or(relpath),
-                "georef" => is_georeferenced = attr.as_bool().unwrap_or(false),
-                "group" => group = parse_attr_raw(attr.value).ok(),
-                _ => {}
-            }
-        }
-
-        let mut transformations = None;
-        let mut crs_spec = String::new();
-        let mut track_crs_spec = String::new();
-        let mut projected_crs_spec = String::new();
-
-        let mut buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buf)? {
-                Event::Start(child) => match child.local_name().as_ref() {
-                    "transformations" => {
-                        transformations = Some(TemplateTransformations::parse(reader, &child)?);
-                    }
-                    "crs_spec" => {
-                        crs_spec = crate::notes::parse(reader)?;
-                    }
-                    "projected_crs_spec" => {
-                        projected_crs_spec = crate::notes::parse(reader)?;
-                    }
-                    "track_crs_spec" => {
-                        track_crs_spec = crate::notes::parse(reader)?;
-                    }
-                    _ => {}
-                },
-                Event::End(be) if be.local_name().as_ref() == "template" => break,
-                Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::Template));
-                }
-                _ => {}
-            }
-        }
-
-        let common = TemplateCommon {
-            is_open,
-            name,
-            path,
-            relpath,
-            is_georeferenced,
-            group,
-            transformations,
-        };
-
-        let template = match template_type.as_str() {
-            "TemplateTrack" => Self::Track(TrackTemplate {
-                common,
-                track_crs_spec,
-                projected_crs_spec,
-            }),
-            "TemplateMap" => Self::Map(MapTemplate { common }),
-            "GdalTemplate" => Self::Gdal(GdalTemplate { common, crs_spec }),
-            "OgrTemplate" => Self::Ogr(OgrTemplate {
-                common,
-                crs_spec,
-                track_crs_spec,
-                projected_crs_spec,
-            }),
-            "TemplateImage" => Self::Image(ImageTemplate { common }),
-            _ => return Err(Error::TemplateError),
-        };
-        Ok(template)
-    }
-
-    pub(super) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        let common = self.common();
-
-        let mut start = BytesStart::new("template").with_attributes([
-            ("type", self.type_name()),
-            ("open", common.is_open.to_string().as_str()),
-            ("name", common.name.as_str()),
-            ("path", common.path.to_string_lossy().as_ref()),
-            ("relpath", common.relpath.to_string_lossy().as_ref()),
-        ]);
-
-        if common.is_georeferenced {
-            start.push_attribute(("georef", "true"));
-        }
-        if let Some(group) = common.group {
-            start.push_attribute(("group", group.to_string().as_str()));
-        }
-
-        writer.write_event(Event::Start(start))?;
-
-        if let Some(t) = &common.transformations {
-            t.write(writer)?;
-        }
-
-        match &self {
-            Self::Gdal(t) => t.write(writer)?,
-            Self::Track(t) => t.write(writer)?,
-            Self::Ogr(t) => t.write(writer)?,
-            Self::Image(_) | Self::Map(_) => {}
-        }
-
-        writer.write_event(Event::End(BytesEnd::new("template")))?;
-        Ok(())
-    }
-}
-
-impl TemplateTransformations {
-    pub(super) fn write<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<()> {
-        let mut start = BytesStart::new("transformations");
-        match self.adjustment {
-            AdjustmentState::Adjusted => start.push_attribute(("adjusted", "true")),
-            AdjustmentState::AdjustmentDirty => start.push_attribute(("adjustment_dirty", "true")),
-            AdjustmentState::NoAdjustment => {}
-        }
-        start.push_attribute(("passpoints", self.passpoints.len().to_string().as_str()));
-
-        writer.write_event(Event::Start(start))?;
-
-        self.active_transform.write(writer, "active")?;
-        self.other_transform.write(writer, "other")?;
-
-        for pp in &self.passpoints {
-            pp.write(writer)?;
-        }
-
-        if let Some(map_to_template) = &self.map_to_template {
-            map_to_template.write(writer, "map_to_template")?;
-        }
-        if let Some(template_to_map) = &self.template_to_map {
-            template_to_map.write(writer, "template_to_map")?;
-        }
-        if let Some(template_to_map_other) = &self.template_to_map_other {
-            template_to_map_other.write(writer, "template_to_map_other")?;
-        }
-
-        writer.write_event(Event::End(BytesEnd::new("transformations")))?;
-        Ok(())
     }
 }
 

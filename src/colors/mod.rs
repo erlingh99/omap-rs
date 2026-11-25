@@ -8,10 +8,6 @@ pub use color::{Color, ColorComponent, MixedColor, SpotColor, SymbolColor};
 pub use color_set::ColorSet;
 pub(crate) use ids::ColorKey;
 pub use ids::{ColorId, ColorKind, MixedColorId, SpotColorId};
-use quick_xml::{
-    Writer,
-    events::{BytesStart, Event},
-};
 
 use crate::utils::UnitF64;
 use crate::{Error, Result};
@@ -99,20 +95,6 @@ pub enum CmykMode {
     FromRgb,
     /// Explicitly specified CMYK values.
     Cmyk(Cmyk),
-}
-
-impl CmykMode {
-    fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
-        let string = match self {
-            Self::FromSpotColors => "spotcolor",
-            Self::FromRgb => "rgb",
-            Self::Cmyk(_) => "custom",
-        };
-        writer.write_event(Event::Empty(
-            BytesStart::new("cmyk").with_attributes([("method", string)]),
-        ))?;
-        Ok(())
-    }
 }
 
 /// An RGB color value with each component in the range `[0, 1]`.
@@ -212,24 +194,6 @@ pub enum RgbMode {
     FromCmyk,
     /// Explicitly specified RGB values.
     Rgb(Rgb),
-}
-
-impl RgbMode {
-    fn write<W: std::io::Write>(self, writer: &mut Writer<W>) -> Result<()> {
-        let bs = BytesStart::new("rgb");
-        let bs = match self {
-            Self::FromSpotColors => bs.with_attributes([("method", "spotcolor")]),
-            Self::FromCmyk => bs.with_attributes([("method", "cmyk")]),
-            Self::Rgb(rgb) => bs.with_attributes([
-                ("method", "custom"),
-                ("r", format!("{:.3}", rgb.r.get()).as_str()),
-                ("g", format!("{:.3}", rgb.g.get()).as_str()),
-                ("b", format!("{:.3}", rgb.b.get()).as_str()),
-            ]),
-        };
-        writer.write_event(Event::Empty(bs))?;
-        Ok(())
-    }
 }
 
 /// An RGB color value with each component in the range `[0, 1]`.

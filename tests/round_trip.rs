@@ -1,6 +1,9 @@
 //! Test that read - write - read does not change the map
 
-use omap::{Omap, Result};
+#![cfg(feature = "xml")]
+
+/// What a test returns: any error fails it.
+type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 const ISOM_15000: &[u8] = include_bytes!("../src/default_maps/isom_15000.omap");
 const ISOM_10000: &[u8] = include_bytes!("../src/default_maps/isom_10000.omap");
@@ -16,10 +19,10 @@ fn corpus() -> [(&'static str, &'static [u8]); 4] {
     ]
 }
 
-fn round_trip(bytes: &[u8]) -> Result<Vec<u8>> {
-    let map = Omap::from_bytes(bytes)?;
+fn round_trip(bytes: &[u8]) -> TestResult<Vec<u8>> {
+    let map = omap::xml::read(bytes)?;
     let mut out = Vec::new();
-    map.to_writer(&mut out)?;
+    omap::xml::write(&map, &mut out)?;
     Ok(out)
 }
 
@@ -152,7 +155,7 @@ fn bundled_templates_number_symbols_in_file_order() {
 }
 
 #[test]
-fn writing_is_a_fixed_point() -> Result<()> {
+fn writing_is_a_fixed_point() -> TestResult {
     for (name, bytes) in corpus() {
         let first = round_trip(bytes)?;
         let second = round_trip(&first)?;
@@ -170,7 +173,7 @@ fn writing_is_a_fixed_point() -> Result<()> {
 }
 
 #[test]
-fn colors_survive_the_round_trip() -> Result<()> {
+fn colors_survive_the_round_trip() -> TestResult {
     for (name, bytes) in corpus() {
         let original = String::from_utf8_lossy(bytes).into_owned();
         let written = round_trip(bytes)?;
@@ -215,7 +218,7 @@ fn colors_survive_the_round_trip() -> Result<()> {
 }
 
 #[test]
-fn symbols_survive_the_round_trip() -> Result<()> {
+fn symbols_survive_the_round_trip() -> TestResult {
     for (name, bytes) in corpus() {
         let original = String::from_utf8_lossy(bytes).into_owned();
         let written = round_trip(bytes)?;
@@ -260,7 +263,7 @@ fn symbols_survive_the_round_trip() -> Result<()> {
 }
 
 #[test]
-fn objects_survive_the_round_trip() -> Result<()> {
+fn objects_survive_the_round_trip() -> TestResult {
     for (name, bytes) in corpus() {
         let original = String::from_utf8_lossy(bytes).into_owned();
         let written = round_trip(bytes)?;
@@ -276,7 +279,7 @@ fn objects_survive_the_round_trip() -> Result<()> {
 }
 
 #[test]
-fn no_reference_degrades_to_the_unknown_sentinel() -> Result<()> {
+fn no_reference_degrades_to_the_unknown_sentinel() -> TestResult {
     for (name, bytes) in corpus() {
         let original = String::from_utf8_lossy(bytes).into_owned();
         let written = round_trip(bytes)?;

@@ -1,13 +1,6 @@
 use super::{Cmyk, CmykMode, ColorId, ColorKind, ColorSet, Rgb, RgbMode, SpotColorId};
-use crate::{Error, NonNegativeF64, OmapSection, Result};
-use crate::{
-    notes,
-    utils::{UnitF64, parse_attr, parse_attr_raw, try_get_attr_raw},
-};
-use quick_xml::{
-    Reader, Writer,
-    events::{BytesEnd, BytesStart, BytesText, Event},
-};
+use crate::utils::UnitF64;
+use crate::{Error, NonNegativeF64, Result};
 
 /// A named spot color with its own CMYK/RGB representation and screen parameters.
 #[derive(Debug, Clone, PartialEq)]
@@ -17,8 +10,8 @@ pub struct SpotColor {
     pub color_name: String,
     /// Whether this color knocks out colors beneath it.
     pub knockout: bool,
-    cmyk_mode: CmykMode, // not allowed to be FromSpotColors and both this and rgb_mode cannot point at eachother
-    rgb_mode: RgbMode,   // same as above
+    pub(crate) cmyk_mode: CmykMode, // not allowed to be FromSpotColors and both this and rgb_mode cannot point at eachother
+    pub(crate) rgb_mode: RgbMode,   // same as above
     /// The internal spot-color name used in printing.
     pub spotcolor_name: String,
     /// Screen ruling frequency (lines per inch).
@@ -134,46 +127,6 @@ impl SpotColor {
     pub fn is_knockout(&self) -> bool {
         self.knockout
     }
-
-    pub(super) fn write<W: std::io::Write>(
-        &self,
-        writer: &mut Writer<W>,
-        priority: usize,
-    ) -> Result<()> {
-        let cmyk = self.cmyk()?;
-        writer.write_event(Event::Start(BytesStart::new("color").with_attributes([
-            ("priority", priority.to_string().as_str()),
-            ("name", self.name()),
-            ("c", format!("{:.3}", cmyk.c.get()).as_str()),
-            ("m", format!("{:.3}", cmyk.m.get()).as_str()),
-            ("y", format!("{:.3}", cmyk.y.get()).as_str()),
-            ("k", format!("{:.3}", cmyk.k.get()).as_str()),
-            ("opacity", "1"),
-        ])))?;
-        writer.write_event(Event::Start(
-            BytesStart::new("spotcolors")
-                .with_attributes([("knockout", self.knockout.to_string().as_str())]),
-        ))?;
-        writer.write_event(Event::Start(BytesStart::new("namedcolor").with_attributes(
-            [
-                (
-                    "screen_angle",
-                    format!("{:.1}", self.screen_angle_deg).as_str(),
-                ),
-                (
-                    "screen_frequency",
-                    format!("{:.1}", self.screen_frequency.get()).as_str(),
-                ),
-            ],
-        )))?;
-        writer.write_event(Event::Text(BytesText::new(&self.spotcolor_name)))?;
-        writer.write_event(Event::End(BytesEnd::new("namedcolor")))?;
-        writer.write_event(Event::End(BytesEnd::new("spotcolors")))?;
-        self.cmyk_mode.write(writer)?;
-        self.rgb_mode.write(writer)?;
-        writer.write_event(Event::End(BytesEnd::new("color")))?;
-        Ok(())
-    }
 }
 
 /// A weighted reference to a spot color, used as a component in [`MixedColor`].
@@ -194,8 +147,8 @@ pub struct MixedColor {
     pub color_name: String,
     /// Whether this color knocks out colors beneath it.
     pub knockout: bool,
-    cmyk_mode: CmykMode,
-    rgb_mode: RgbMode,
+    pub(crate) cmyk_mode: CmykMode,
+    pub(crate) rgb_mode: RgbMode,
     /// The spot-color components and their weights.
     pub components: Vec<ColorComponent>,
 }
@@ -366,45 +319,6 @@ impl MixedColor {
         }
         Ok(rgb)
     }
-
-    pub(super) fn write<W: std::io::Write>(
-        &self,
-        writer: &mut Writer<W>,
-        priority: usize,
-        color_set: &ColorSet,
-    ) -> Result<()> {
-        let cmyk = self.cmyk(color_set)?;
-
-        writer.write_event(Event::Start(BytesStart::new("color").with_attributes([
-            ("priority", priority.to_string().as_str()),
-            ("name", self.name()),
-            ("c", format!("{:.3}", cmyk.c.get()).as_str()),
-            ("m", format!("{:.3}", cmyk.m.get()).as_str()),
-            ("y", format!("{:.3}", cmyk.y.get()).as_str()),
-            ("k", format!("{:.3}", cmyk.k.get()).as_str()),
-            ("opacity", "1"),
-        ])))?;
-        writer.write_event(Event::Start(
-            BytesStart::new("spotcolors")
-                .with_attributes([("knockout", self.knockout.to_string().as_str())]),
-        ))?;
-
-        for component in &self.components {
-            if let Some(priority) = color_set.position(component.color) {
-                writer.write_event(Event::Empty(BytesStart::new("component").with_attributes(
-                    [
-                        ("factor", format!("{:.3}", component.factor.get()).as_str()),
-                        ("spotcolor", priority.to_string().as_str()),
-                    ],
-                )))?;
-            }
-        }
-        writer.write_event(Event::End(BytesEnd::new("spotcolors")))?;
-        self.cmyk_mode.write(writer)?;
-        self.rgb_mode.write(writer)?;
-        writer.write_event(Event::End(BytesEnd::new("color")))?;
-        Ok(())
-    }
 }
 
 /// Either a [`SpotColor`] or a [`MixedColor`].
@@ -523,236 +437,6 @@ impl From<MixedColor> for Color {
     }
 }
 
-pub(super) enum ColorParseReturn {
-    Spot {
-        color: SpotColor,
-        priority: usize,
-    },
-    Mix {
-        color: MixedColor,
-        priority: usize,
-        components: Vec<(i32, f64)>,
-    },
-}
-
-impl Color {
-    /// Parsing return both the parsed color (or almost parsed color) and the spotcolor references which might not be parseable yet and must wait
-    #[expect(
-        clippy::too_many_lines,
-        reason = "color parsing follows the nested OMAP XML structure"
-    )]
-    pub(super) fn parse<R: std::io::BufRead>(
-        reader: &mut Reader<R>,
-        element: &BytesStart<'_>,
-    ) -> Result<ColorParseReturn> {
-        let mut name = String::new();
-        let mut cmyk = Cmyk::default();
-        let mut id = usize::MAX;
-
-        for attr in element.attributes().filter_map(std::result::Result::ok) {
-            match attr.key.local_name().as_ref() {
-                "name" => {
-                    if let Ok(n) = parse_attr::<String>(attr) {
-                        name.push_str(&n);
-                    }
-                }
-                "c" => {
-                    cmyk.c = UnitF64::clamped_from(
-                        parse_attr_raw(attr.value).unwrap_or_else(|_| cmyk.c.get()),
-                    );
-                }
-                "m" => {
-                    cmyk.m = UnitF64::clamped_from(
-                        parse_attr_raw(attr.value).unwrap_or_else(|_| cmyk.m.get()),
-                    );
-                }
-                "y" => {
-                    cmyk.y = UnitF64::clamped_from(
-                        parse_attr_raw(attr.value).unwrap_or_else(|_| cmyk.y.get()),
-                    );
-                }
-                "k" => {
-                    cmyk.k = UnitF64::clamped_from(
-                        parse_attr_raw(attr.value).unwrap_or_else(|_| cmyk.k.get()),
-                    );
-                }
-                "priority" => id = parse_attr_raw(attr.value).unwrap_or(id),
-                _ => (),
-            }
-        }
-
-        let mut is_spotcolor = false;
-        let mut cmyk_mode = CmykMode::Cmyk(cmyk);
-        let mut rgb_mode = RgbMode::FromCmyk;
-
-        let mut spot_angle = 0.;
-        let mut spot_frequency = 0.;
-        let mut spotcolor_name = String::new();
-        let mut spotcolor_components = Vec::new();
-        let mut knockout = false;
-
-        let mut buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buf)? {
-                Event::Start(bytes_start) => match bytes_start.local_name().as_ref() {
-                    "cmyk" => {
-                        if let Some(mode) = bytes_start
-                            .try_get_attribute("method")
-                            .ok()
-                            .flatten()
-                            .and_then(|s| match s.value.as_ref() {
-                                "custom" => Some(CmykMode::Cmyk(cmyk)),
-                                "spotcolor" => Some(CmykMode::FromSpotColors),
-                                "rgb" => Some(CmykMode::FromRgb),
-                                _ => None,
-                            })
-                        {
-                            cmyk_mode = mode;
-                        }
-                    }
-                    "rgb" => {
-                        if let Some(mode) = bytes_start
-                            .try_get_attribute("method")?
-                            .map(|s| -> Result<Option<RgbMode>> {
-                                match s.value.as_ref() {
-                                    "custom" => {
-                                        let r = UnitF64::clamped_from(
-                                            try_get_attr_raw(&bytes_start, "r")?.unwrap_or(0.),
-                                        );
-                                        let g = UnitF64::clamped_from(
-                                            try_get_attr_raw(&bytes_start, "g")?.unwrap_or(0.),
-                                        );
-                                        let b = UnitF64::clamped_from(
-                                            try_get_attr_raw(&bytes_start, "b")?.unwrap_or(0.),
-                                        );
-                                        Ok(Some(RgbMode::Rgb(Rgb { r, g, b })))
-                                    }
-                                    "spotcolor" => Ok(Some(RgbMode::FromSpotColors)),
-                                    "cmyk" => Ok(Some(RgbMode::FromCmyk)),
-                                    _ => Ok(None),
-                                }
-                            })
-                            .transpose()?
-                            .flatten()
-                        {
-                            rgb_mode = mode;
-                        }
-                    }
-                    "spotcolors" => {
-                        knockout = try_get_attr_raw(&bytes_start, "knockout")
-                            .ok()
-                            .flatten()
-                            .unwrap_or(false);
-
-                        loop {
-                            match reader.read_event_into(&mut buf)? {
-                                Event::Start(bytes_start) => {
-                                    // if the next event is called namedcolor we've got a new spotcolor
-                                    match bytes_start.local_name().as_ref() {
-                                        "namedcolor" => {
-                                            is_spotcolor = true;
-                                            spot_angle =
-                                                try_get_attr_raw(&bytes_start, "screen_angle")
-                                                    .ok()
-                                                    .flatten()
-                                                    .unwrap_or(0.);
-                                            spot_frequency =
-                                                try_get_attr_raw(&bytes_start, "screen_frequency")
-                                                    .ok()
-                                                    .flatten()
-                                                    .unwrap_or(0.);
-                                            spotcolor_name = notes::parse(reader)?;
-                                        }
-                                        // Components may reference colors not yet read, so
-                                        // they are resolved once the whole set is parsed.
-                                        "component" => {
-                                            let factor = try_get_attr_raw(&bytes_start, "factor")?
-                                                .unwrap_or(0.);
-
-                                            let spotcolor_id =
-                                                try_get_attr_raw(&bytes_start, "spotcolor")?
-                                                    .unwrap_or(-1);
-                                            spotcolor_components.push((spotcolor_id, factor));
-                                        }
-                                        _ => (),
-                                    }
-                                }
-                                Event::End(bytes_end)
-                                    if bytes_end.local_name().as_ref() == "spotcolors" =>
-                                {
-                                    break;
-                                }
-                                Event::Eof => {
-                                    return Err(Error::UnexpectedEof(OmapSection::Color));
-                                }
-                                _ => (),
-                            }
-                        }
-                    }
-                    _ => (),
-                },
-                Event::End(bytes_end) if bytes_end.local_name().as_ref() == "color" => {
-                    break;
-                }
-                Event::Eof => return Err(Error::UnexpectedEof(OmapSection::Color)),
-                _ => (),
-            }
-        }
-
-        if id == usize::MAX {
-            return Err(Error::MissingColorId);
-        }
-
-        if is_spotcolor {
-            // fix possible bad color definition modes
-            if cmyk_mode == CmykMode::FromSpotColors {
-                cmyk_mode = CmykMode::Cmyk(cmyk);
-            }
-            if rgb_mode == RgbMode::FromSpotColors {
-                rgb_mode = RgbMode::FromCmyk;
-            }
-            if rgb_mode == RgbMode::FromCmyk && cmyk_mode == CmykMode::FromRgb {
-                cmyk_mode = CmykMode::Cmyk(cmyk);
-            }
-
-            Ok(ColorParseReturn::Spot {
-                color: SpotColor {
-                    color_name: name,
-                    knockout,
-                    cmyk_mode,
-                    rgb_mode,
-                    spotcolor_name,
-                    screen_frequency: NonNegativeF64::clamped_from(spot_frequency),
-                    screen_angle_deg: spot_angle,
-                },
-                priority: id,
-            })
-        } else {
-            // fix possible bad color definition modes
-            if cmyk_mode == CmykMode::FromSpotColors && spotcolor_components.is_empty() {
-                cmyk_mode = CmykMode::Cmyk(cmyk);
-            }
-            if rgb_mode == RgbMode::FromSpotColors && spotcolor_components.is_empty() {
-                rgb_mode = RgbMode::FromCmyk;
-            }
-            if rgb_mode == RgbMode::FromCmyk && cmyk_mode == CmykMode::FromRgb {
-                cmyk_mode = CmykMode::Cmyk(cmyk);
-            }
-            Ok(ColorParseReturn::Mix {
-                color: MixedColor {
-                    color_name: name,
-                    knockout,
-                    cmyk_mode,
-                    rgb_mode,
-                    components: Vec::new(),
-                },
-                priority: id,
-                components: spotcolor_components,
-            })
-        }
-    }
-}
-
 /// A color reference used by symbols: a regular color, registration black, or no color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -766,29 +450,6 @@ pub enum SymbolColor {
 }
 
 impl SymbolColor {
-    /// Create a `SymbolColor` from a file color index.
-    /// -1 or missing => `NoColor`, -900 => `RegistrationBlack`, >= 0 => Color lookup.
-    pub(crate) fn from_index(index: i32, color_set: &ColorSet) -> Self {
-        match index {
-            -900 => Self::RegistrationBlack,
-            i if i >= 0 => match color_set.at(i as usize) {
-                Some(color) => Self::Color(color.id()),
-                None => Self::NoColor,
-            },
-            _ => Self::NoColor,
-        }
-    }
-
-    /// Get the priority index of this color in the color set.
-    /// Returns -1 for `NoColor`, -900 for `RegistrationBlack`.
-    pub(crate) fn priority(&self, color_set: &ColorSet) -> i32 {
-        match self {
-            Self::Color(id) => color_set.position(*id).map_or(-1, |p| p as i32),
-            Self::RegistrationBlack => -900,
-            Self::NoColor => -1,
-        }
-    }
-
     /// The color this refers to, if it is a map color still in `color_set`.
     pub fn id(&self) -> Option<ColorId> {
         match self {

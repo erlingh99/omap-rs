@@ -15,12 +15,12 @@ use omap::geo_referencing::GeoRef;
 #[cfg(feature = "geo_ref")]
 use omap::objects::MapObject;
 use omap::{
-    Code, Error, Omap,
+    Code, Omap,
     colors::Color,
     objects::{LineObject, TextGeometry, TextObject},
 };
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut map = Omap::from_path("./example_data/from_path.omap")?;
 
     #[cfg(feature = "geo_ref")]
@@ -142,5 +142,6 @@ fn main() -> Result<(), Error> {
 
     println!("Does the map pass validation: {:?}", map.validate());
 
-    map.to_file("./from_path_out.omap")
+    map.to_file("./from_path_out.omap")?;
+    Ok(())
 }

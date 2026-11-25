@@ -1,19 +1,17 @@
+//! The XML declaration and the root `<map>` element's version.
+
+use crate::xml::attrs::try_get_attr_raw;
+use crate::xml::{Error, Result};
+use quick_xml::events::{BytesDecl, BytesStart, Event};
+use quick_xml::{Writer, XmlVersion};
 use std::str::FromStr;
-
-use quick_xml::{
-    Writer, XmlVersion,
-    events::{BytesDecl, BytesStart, Event},
-};
-
-use crate::utils::try_get_attr_raw;
-use crate::{Error, Result};
 
 /// The OMAP file format version.
 #[derive(Debug, Clone)]
-pub(crate) struct OmapVersion;
+pub(in crate::xml) struct OmapVersion;
 
 impl<'writer> OmapVersion {
-    pub(crate) fn parse(element: &BytesStart<'_>) -> Result<()> {
+    pub(in crate::xml) fn parse(element: &BytesStart<'_>) -> Result<()> {
         let xmlns = try_get_attr_raw(element, "xmlns")?;
         let version = try_get_attr_raw::<u8>(element, "version")?;
 
@@ -27,7 +25,7 @@ impl<'writer> OmapVersion {
         Ok(())
     }
 
-    pub(crate) fn write<W: std::io::Write>(writer: &'writer mut Writer<W>) -> Result<()> {
+    pub(in crate::xml) fn write<W: std::io::Write>(writer: &'writer mut Writer<W>) -> Result<()> {
         writer.write_event(Event::Start(BytesStart::new("map").with_attributes([
             ("xmlns", "http://openorienteering.org/apps/mapper/xml/v2"),
             ("version", "9"),
@@ -38,10 +36,10 @@ impl<'writer> OmapVersion {
 
 /// The XML declaration (version and encoding).
 #[derive(Debug, Clone)]
-pub(crate) struct XmlDeclaration;
+pub(in crate::xml) struct XmlDeclaration;
 
 impl XmlDeclaration {
-    pub(crate) fn parse(decl: BytesDecl<'_>) -> Result<()> {
+    pub(in crate::xml) fn parse(decl: BytesDecl<'_>) -> Result<()> {
         let version = decl.xml_version()?;
         if version != XmlVersion::Explicit1_0 {
             return Err(Error::UnsupportedXmlVersion);
@@ -52,7 +50,7 @@ impl XmlDeclaration {
         Ok(())
     }
 
-    pub(crate) fn write<W: std::io::Write>(writer: &mut Writer<W>) -> Result<()> {
+    pub(in crate::xml) fn write<W: std::io::Write>(writer: &mut Writer<W>) -> Result<()> {
         writer.write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)))?;
         Ok(())
     }

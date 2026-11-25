@@ -21,20 +21,6 @@ pub enum SymbolKind {
     CombinedLine,
 }
 
-impl SymbolKind {
-    /// The `type` attribute the `.omap` format stores for this kind. The format
-    /// has no combined line symbol, so both combined kinds write `16`.
-    pub(crate) fn type_id(self) -> &'static str {
-        match self {
-            Self::Point => "1",
-            Self::Line => "2",
-            Self::Area => "4",
-            Self::Text => "8",
-            Self::CombinedArea | Self::CombinedLine => "16",
-        }
-    }
-}
-
 /// Widening a typed handle is infallible. Narrowing an [`crate::Entry`] of a symbol
 /// checks the kind of the referenced symbol.
 macro_rules! symbol_ids {

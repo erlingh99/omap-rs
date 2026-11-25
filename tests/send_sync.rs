@@ -1,6 +1,11 @@
 //! Make sure that the `Omap` type and its components are `Send`, `Sync` and `Clone`.
 
-use omap::{Omap, Result};
+#![cfg(feature = "xml")]
+
+use omap::Omap;
+
+/// What a test returns: any error fails it.
+type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 fn assert_send<T: Send>() {}
 fn assert_sync<T: Sync>() {}
@@ -36,8 +41,8 @@ fn handles_are_copy_and_hashable() {
 }
 
 #[test]
-fn a_map_can_be_moved_to_a_worker_thread() -> Result<()> {
-    let map = Omap::from_bytes(include_bytes!("../src/default_maps/isom_15000.omap"))?;
+fn a_map_can_be_moved_to_a_worker_thread() -> TestResult {
+    let map = omap::xml::read(include_bytes!("../src/default_maps/isom_15000.omap").as_slice())?;
     let symbols = map.symbols.len();
 
     let counted = std::thread::spawn(move || map.symbols.len())
@@ -51,8 +56,8 @@ fn a_map_can_be_moved_to_a_worker_thread() -> Result<()> {
 /// Cloning preserves slot indices and generations, so handles taken from the
 /// original still resolve against the clone.
 #[test]
-fn handles_survive_a_clone() -> Result<()> {
-    let map = Omap::from_bytes(include_bytes!("../src/default_maps/isom_15000.omap"))?;
+fn handles_survive_a_clone() -> TestResult {
+    let map = omap::xml::read(include_bytes!("../src/default_maps/isom_15000.omap").as_slice())?;
     let id = map.symbols.ids().next().ok_or(omap::Error::ObjectError)?;
     let name = map
         .symbols
@@ -73,8 +78,9 @@ fn handles_survive_a_clone() -> Result<()> {
 /// A handle to a removed symbol stops resolving rather than naming whatever
 /// reused the slot.
 #[test]
-fn a_removed_symbol_stops_resolving() -> Result<()> {
-    let mut map = Omap::from_bytes(include_bytes!("../src/default_maps/isom_15000.omap"))?;
+fn a_removed_symbol_stops_resolving() -> TestResult {
+    let mut map =
+        omap::xml::read(include_bytes!("../src/default_maps/isom_15000.omap").as_slice())?;
     let id = map.symbols.ids().next().ok_or(omap::Error::ObjectError)?;
     assert!(map.symbols.contains(id));
 
@@ -91,9 +97,9 @@ fn a_removed_symbol_stops_resolving() -> Result<()> {
 /// Documented on [`omap::symbols::SymbolSet`]; pinned here so the day it stops
 /// being true is a deliberate change rather than a silent one.
 #[test]
-fn a_handle_does_not_know_which_map_it_came_from() -> Result<()> {
-    let a = Omap::from_bytes(include_bytes!("../src/default_maps/isom_15000.omap"))?;
-    let b = Omap::from_bytes(include_bytes!("../src/default_maps/issprom_4000.omap"))?;
+fn a_handle_does_not_know_which_map_it_came_from() -> TestResult {
+    let a = omap::xml::read(include_bytes!("../src/default_maps/isom_15000.omap").as_slice())?;
+    let b = omap::xml::read(include_bytes!("../src/default_maps/issprom_4000.omap").as_slice())?;
 
     let id = a.symbols.ids().next().ok_or(omap::Error::ObjectError)?;
 

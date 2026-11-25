@@ -3,6 +3,8 @@
 //! something referred to it, a prune makes it pass, and a second prune
 //! changes nothing.
 
+#![cfg(feature = "xml")]
+
 use std::sync::Arc;
 
 use omap::{
@@ -32,7 +34,7 @@ const MAPS: [(&str, &[u8]); 4] = [
 
 fn maps() -> impl Iterator<Item = (&'static str, Omap)> {
     MAPS.into_iter().map(|(name, bytes)| {
-        let map = Omap::from_bytes(bytes).expect("map parses");
+        let map = omap::xml::read(bytes).expect("map parses");
         map.validate()
             .expect("a map as read has no dangling reference");
         (name, map)

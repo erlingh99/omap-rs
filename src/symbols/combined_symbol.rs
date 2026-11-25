@@ -1,48 +1,8 @@
-use quick_xml::{
-    Writer,
-    events::{BytesEnd, BytesStart, Event},
-};
-
-use super::{
-    AreaOrLineSymbol, LineSymbol, PublicOrPrivateSymbol, SymbolCommon, SymbolSet,
-    symbol::SymbolPosition,
-};
+use super::{AreaOrLineSymbol, LineSymbol, PublicOrPrivateSymbol, SymbolCommon, SymbolSet};
 use crate::{
-    Code, Result,
-    colors::ColorSet,
+    Code,
     symbols::{LinePathSymbolId, PathSymbolId, Symbol, SymbolId},
 };
-
-pub(crate) trait PrivatePart {
-    fn write_part<W: std::io::Write>(
-        &self,
-        writer: &mut Writer<W>,
-        color_set: &ColorSet,
-    ) -> Result<()>;
-}
-
-impl PrivatePart for AreaOrLineSymbol {
-    fn write_part<W: std::io::Write>(
-        &self,
-        writer: &mut Writer<W>,
-        color_set: &ColorSet,
-    ) -> Result<()> {
-        match self {
-            Self::Area(symbol) => symbol.write(writer, color_set, SymbolPosition::Private),
-            Self::Line(symbol) => symbol.write(writer, color_set, SymbolPosition::Private),
-        }
-    }
-}
-
-impl PrivatePart for LineSymbol {
-    fn write_part<W: std::io::Write>(
-        &self,
-        writer: &mut Writer<W>,
-        color_set: &ColorSet,
-    ) -> Result<()> {
-        self.write(writer, color_set, SymbolPosition::Private)
-    }
-}
 
 /// A symbol built from other symbols, public or private.
 ///
@@ -57,7 +17,7 @@ pub struct CombinedSymbol<Id, Private> {
     /// Public components are added through [`SymbolSet::add_area_component`]
     /// and [`SymbolSet::add_line_component`], which reject any component that
     /// would make the definition cyclic.
-    parts: Vec<PublicOrPrivateSymbol<Id, Private>>,
+    pub(crate) parts: Vec<PublicOrPrivateSymbol<Id, Private>>,
 }
 
 /// A combined area symbol: any path symbol public, an area or line private.
@@ -79,13 +39,6 @@ impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
         }
     }
 
-    pub(super) fn from_parts(
-        common: SymbolCommon,
-        parts: Vec<PublicOrPrivateSymbol<Id, Private>>,
-    ) -> Self {
-        Self { common, parts }
-    }
-
     /// Iterate through the symbol component of the symbol
     pub fn components(&self) -> impl Iterator<Item = &PublicOrPrivateSymbol<Id, Private>> {
         self.parts.iter()
@@ -104,14 +57,6 @@ impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
             PublicOrPrivateSymbol::Public(id) => *id,
             PublicOrPrivateSymbol::Private(_) => None,
         })
-    }
-
-    /// Point the public part at `position` at `id`. Does nothing if there is
-    /// no public part there.
-    pub(crate) fn set_public(&mut self, position: usize, id: Id) {
-        if let Some(PublicOrPrivateSymbol::Public(part)) = self.parts.get_mut(position) {
-            *part = Some(id);
-        }
     }
 
     /// Remove and return the symbol component at position `index` in the component vec.
@@ -178,41 +123,5 @@ impl<Id: Copy + Into<SymbolId>, Private> CombinedSymbol<Id, Private> {
                 _ => false,
             }
         })
-    }
-
-    pub(super) fn write_body<W: std::io::Write>(
-        &self,
-        writer: &mut Writer<W>,
-        symbol_set: &SymbolSet,
-        color_set: &ColorSet,
-    ) -> Result<()>
-    where
-        Private: PrivatePart,
-    {
-        let mut cs = BytesStart::new("combined_symbol");
-        cs.push_attribute(("parts", self.parts.len().to_string().as_str()));
-        writer.write_event(Event::Start(cs))?;
-
-        for part in &self.parts {
-            match part {
-                PublicOrPrivateSymbol::Public(id) => {
-                    let sym_index = symbol_set.file_index(*id);
-                    writer.write_event(Event::Empty(
-                        BytesStart::new("part")
-                            .with_attributes([("symbol", sym_index.to_string().as_str())]),
-                    ))?;
-                }
-                PublicOrPrivateSymbol::Private(symbol) => {
-                    writer.write_event(Event::Start(
-                        BytesStart::new("part").with_attributes([("private", "true")]),
-                    ))?;
-                    symbol.write_part(writer, color_set)?;
-                    writer.write_event(Event::End(BytesEnd::new("part")))?;
-                }
-            }
-        }
-
-        writer.write_event(Event::End(BytesEnd::new("combined_symbol")))?;
-        Ok(())
     }
 }

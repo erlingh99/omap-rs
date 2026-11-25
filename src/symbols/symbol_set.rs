@@ -1,22 +1,14 @@
-use super::combined_area_symbol::UnresolvedPart;
 use std::collections::HashSet;
-
-use quick_xml::{
-    Reader, Writer,
-    events::{BytesEnd, BytesStart, Event},
-};
 
 use super::Symbol;
 use crate::{
-    Code, Collection, Entry, Error, OmapSection, Removed, Result,
-    colors::ColorSet,
+    Code, Collection, Entry, Error, Removed, Result,
     symbols::{
         AreaOrLineSymbol, AreaPathSymbolId, AreaSymbol, AreaSymbolId, CombinedAreaSymbol,
         CombinedAreaSymbolId, CombinedLineSymbol, CombinedLineSymbolId, LinePathSymbolId,
         LineSymbol, LineSymbolId, PathSymbolId, PointSymbol, PointSymbolId, PublicOrPrivateSymbol,
         SymbolId, TextSymbol, TextSymbolId,
     },
-    utils::{try_get_attr, try_get_attr_raw},
 };
 
 /// The map's symbols, in file order.
@@ -165,13 +157,6 @@ impl SymbolSet {
             .filter(move |s| s.common().code.major == major && s.common().code.minor == minor)
     }
 
-    /// The integer the `.omap` format stores for a symbol reference. No symbol,
-    /// or a removed one, is the format's `-1` sentinel.
-    pub(crate) fn file_index(&self, id: Option<impl Into<SymbolId>>) -> i32 {
-        id.and_then(|id| self.position(id))
-            .map_or(-1, |index| index as i32)
-    }
-
     /// Sort the symbols by [`Code`]. Every handle stays valid.
     pub fn sort(&mut self) {
         self.sort_by_key(|symbol| symbol.common().code);
@@ -317,192 +302,5 @@ impl SymbolSet {
         components
             .into_iter()
             .any(|next| self.reaches(next, goal, visited))
-    }
-
-    #[expect(
-        clippy::too_many_lines,
-        reason = "symbol-set parsing also resolves combined-symbol references"
-    )]
-    pub(crate) fn parse<R: std::io::BufRead>(
-        reader: &mut Reader<R>,
-        element: &BytesStart<'_>,
-        colors: &ColorSet,
-    ) -> Result<(Self, String)> {
-        let symbol_set_name = try_get_attr(element, "id")?.unwrap_or_else(|| "Custom".to_owned());
-        let count = try_get_attr_raw(element, "count")
-            .ok()
-            .flatten()
-            .unwrap_or(1);
-
-        let mut symbols = vec![None; count];
-        let mut components = vec![Vec::new(); count];
-
-        let mut buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buf)? {
-                Event::Start(bytes_start) => {
-                    if matches!(bytes_start.local_name().as_ref(), "symbol") {
-                        let (symbol_id, symbol, combined_components) =
-                            Symbol::parse(reader, &bytes_start, colors)?;
-                        if symbol_id >= symbols.len() {
-                            return Err(Error::SymbolIdOutOfRange(symbol_id));
-                        }
-                        if symbols[symbol_id].is_some() {
-                            return Err(Error::DuplicateSymbolId(symbol_id));
-                        }
-                        components[symbol_id] = combined_components;
-                        symbols[symbol_id] = Some(symbol);
-                    }
-                }
-                Event::End(bytes_end) => {
-                    if matches!(bytes_end.local_name().as_ref(), "symbols") {
-                        break;
-                    }
-                }
-                Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::Symbols));
-                }
-                _ => (),
-            }
-        }
-        let mut symbols: Vec<Symbol> = symbols
-            .into_iter()
-            .collect::<Option<Vec<_>>>()
-            .ok_or(Error::SymbolCountMismatch)?;
-
-        // The format has no combined line symbol, so one arrives as a combined area
-        // symbol that references only lines. Only private parts are populated yet.
-        let mut candidate_indices: Vec<usize> = Vec::new();
-        for (i, symbol) in symbols.iter().enumerate() {
-            if let Symbol::CombinedArea(combined) = symbol {
-                let has_private_area = combined.components().any(|p| {
-                    matches!(p, PublicOrPrivateSymbol::Private(AreaOrLineSymbol::Area(_)))
-                });
-                if has_private_area {
-                    continue;
-                }
-                let has_area_public = components[i].iter().any(|part| {
-                    matches!(
-                        symbols.get(part.file_index),
-                        // Point and text is not allowed in combined symbol, that is treated later on
-                        Some(Symbol::Area(_) | Symbol::Point(_) | Symbol::Text(_))
-                    )
-                });
-                if has_area_public {
-                    continue;
-                }
-                candidate_indices.push(i);
-            }
-        }
-
-        // Referencing a combined area symbol that is not itself a candidate
-        // disqualifies a candidate; referencing a fellow candidate does not.
-        loop {
-            let prev_len = candidate_indices.len();
-            let current_candidates = candidate_indices.clone();
-            candidate_indices.retain(|&idx| {
-                !components[idx].iter().any(|part| {
-                    matches!(symbols.get(part.file_index), Some(Symbol::CombinedArea(_)))
-                        && !current_candidates.contains(&part.file_index)
-                })
-            });
-            if candidate_indices.len() == prev_len {
-                break;
-            }
-        }
-
-        for &idx in &candidate_indices {
-            let Symbol::CombinedArea(combined) = &mut symbols[idx] else {
-                continue;
-            };
-            let mut converted = CombinedLineSymbol::new(Code::default(), String::new());
-            converted.common = std::mem::take(&mut combined.common);
-            let part_count = combined.components().count();
-            // Public parts are still unresolved, so only their places carry over.
-            for _ in 0..part_count {
-                match combined.remove_component(0) {
-                    Some(PublicOrPrivateSymbol::Private(AreaOrLineSymbol::Line(line))) => {
-                        converted.push_component(PublicOrPrivateSymbol::Private(line));
-                    }
-                    Some(PublicOrPrivateSymbol::Public(_)) => {
-                        converted.push_component(PublicOrPrivateSymbol::Public(None));
-                    }
-                    Some(PublicOrPrivateSymbol::Private(AreaOrLineSymbol::Area(_))) | None => {}
-                }
-            }
-            symbols[idx] = Symbol::CombinedLine(Box::new(converted));
-        }
-
-        let mut symbol_set: Self = symbols.into_iter().collect();
-
-        // After conversion, so the handles name the correct types.
-        for (index, parts) in components.into_iter().enumerate() {
-            if parts.is_empty() {
-                continue;
-            }
-            let Some(target) = symbol_set.at(index) else {
-                continue;
-            };
-            let combined_area = target.as_combined_area();
-            let combined_line = target.as_combined_line();
-
-            for UnresolvedPart {
-                position,
-                file_index,
-            } in parts
-            {
-                let component = symbol_set
-                    .at(file_index)
-                    .ok_or(Error::SymbolSetIndexOutOfRange(file_index))?;
-                let kind = component.kind();
-
-                if let Some(target) = combined_area {
-                    let Some(path) = component.as_path() else {
-                        return Err(Error::CombinedSymbolContainsPointOrText(kind));
-                    };
-                    if symbol_set.would_cycle(target.into(), path) {
-                        return Err(Error::CyclicSymbolDefinition);
-                    }
-                    symbol_set
-                        .combined_area_symbol_mut(target)
-                        .ok_or(Error::SymbolConversionError)?
-                        .set_public(position, path);
-                } else if let Some(target) = combined_line {
-                    let Some(line) = component.as_line_path() else {
-                        return Err(Error::CombinedLineSymbolContainsNonLine(kind));
-                    };
-                    if symbol_set.would_cycle(target.into(), line.into()) {
-                        return Err(Error::CyclicSymbolDefinition);
-                    }
-                    symbol_set
-                        .combined_line_symbol_mut(target)
-                        .ok_or(Error::SymbolConversionError)?
-                        .set_public(position, line);
-                } else {
-                    return Err(Error::ComponentsInNonCombinedSymbol);
-                }
-            }
-        }
-
-        Ok((symbol_set, symbol_set_name))
-    }
-
-    pub(crate) fn write<W: std::io::Write>(
-        &self,
-        writer: &mut Writer<W>,
-        colors: &ColorSet,
-        name: &str,
-    ) -> Result<()> {
-        writer.write_event(Event::Start(BytesStart::new("symbols").with_attributes([
-            ("count", self.len().to_string().as_str()),
-            ("id", name),
-        ])))?;
-        writer.get_mut().write_all(b"\n".as_slice())?;
-        for (index, symbol) in self.values().enumerate() {
-            symbol.write(writer, self, colors, index)?;
-            writer.get_mut().write_all(b"\n".as_slice())?;
-        }
-        writer.write_event(Event::End(BytesEnd::new("symbols")))?;
-        Ok(())
     }
 }

@@ -1,10 +1,5 @@
-use quick_xml::{
-    Reader, Writer,
-    events::{BytesEnd, BytesStart, Event},
-};
-
 use super::{MapPart, PartId};
-use crate::{Collection, Error, OmapSection, Result, symbols::SymbolSet};
+use crate::{Collection, Error, Result};
 
 /// The map's parts (layers), in file order. See [`Collection`] for everything
 /// a set does.
@@ -71,52 +66,5 @@ impl MapParts {
     pub fn by_name_mut(&mut self, name: &str) -> Option<&mut MapPart> {
         let index = self.values().position(|p| p.name.as_str() == name)?;
         self.at_mut(index)
-    }
-}
-
-impl MapParts {
-    pub(crate) fn write<W: std::io::Write>(
-        &self,
-        writer: &mut Writer<W>,
-        symbols: &SymbolSet,
-    ) -> Result<()> {
-        writer.write_event(Event::Start(BytesStart::new("parts").with_attributes([
-            ("count", self.len().to_string().as_str()),
-            ("current", "0"),
-        ])))?;
-        writer.get_mut().write_all(b"\n")?;
-
-        for part in self.values() {
-            part.write(writer, symbols)?;
-            writer.get_mut().write_all(b"\n")?;
-        }
-
-        writer.write_event(Event::End(BytesEnd::new("parts")))?;
-        Ok(())
-    }
-
-    pub(crate) fn parse<R: std::io::BufRead>(
-        reader: &mut Reader<R>,
-        symbols: &SymbolSet,
-    ) -> Result<Self> {
-        let mut parts = Self::new();
-
-        let mut buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buf)? {
-                Event::Start(bytes_start) => {
-                    if matches!(bytes_start.local_name().as_ref(), "part") {
-                        let _id = parts.push(MapPart::parse(reader, &bytes_start, symbols)?);
-                    }
-                }
-                Event::End(_) => break,
-                Event::Eof => {
-                    return Err(Error::UnexpectedEof(OmapSection::Parts));
-                }
-                _ => (),
-            }
-        }
-
-        Ok(parts)
     }
 }
