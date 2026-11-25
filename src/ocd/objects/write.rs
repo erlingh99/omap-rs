@@ -14,7 +14,7 @@ use crate::Omap;
 use crate::objects::{HorizontalAlign, MapObject, TextGeometry, TextObject, VerticalAlign};
 use crate::ocd::geometry::{write_polygon, write_rings};
 use crate::ocd::symbols::{Drawn, WrittenSymbols};
-use crate::ocd::units::{FileCoord, to_tenths_of_degree};
+use crate::ocd::units::{FileCoord, mm, to_tenths_of_degree};
 use crate::ocd::warning::{Warning, Warnings, push_once};
 use crate::ocd::{Error, Result};
 use crate::symbols::{DashStyle, Symbol};
@@ -44,6 +44,7 @@ pub(in crate::ocd) fn write_objects(
             "OCAD has no map parts; the objects of every part were written together",
         ));
     }
+    let extents = symbols.extents();
     let mut items = Vec::new();
     for (index, object) in map.iter_all_objects().enumerate() {
         if !object.tags().is_empty() {
@@ -76,9 +77,12 @@ pub(in crate::ocd) fn write_objects(
                 Some(Symbol::Text(text)) => text.font_size.get(),
                 _ => 4.,
             };
-            let file_object =
-                FileObject::new(object, number, drawn, dash_flag, font_size, index, warnings)?;
-            items.push(file_object.item()?);
+            let extent = mm(extents.get(&number).copied().unwrap_or_default());
+            for file_object in
+                FileObject::new(object, number, drawn, dash_flag, font_size, index, warnings)?
+            {
+                items.push(file_object.item(extent)?);
+            }
         }
     }
     Ok(items)
@@ -116,7 +120,42 @@ struct FileObject {
 }
 
 impl FileObject {
+    /// `object` written under `symbol`: one object, or, for an area drawn
+    /// by a line symbol, one line object per ring, since OCAD knows holes
+    /// only in areas.
     fn new(
+        object: &MapObject,
+        symbol: i32,
+        drawn: Drawn,
+        dash_flag: i32,
+        font_size: f64,
+        index: usize,
+        warnings: &mut Warnings,
+    ) -> Result<Vec<Self>> {
+        if let MapObject::Area(area) = object
+            && matches!(drawn, Drawn::Line)
+        {
+            let polygon = area.geometry();
+            let mut objects = Vec::new();
+            for ring in std::iter::once(polygon.exterior()).chain(polygon.interiors()) {
+                let coords = write_rings([ring], dash_flag)?;
+                if coords.is_empty() {
+                    continue;
+                }
+                let header = ObjectHeader {
+                    symbol,
+                    object_type: object_type::LINE,
+                    ..ObjectHeader::default()
+                };
+                objects.push(Self::with_header(header, coords, Vec::new())?);
+            }
+            return Ok(objects);
+        }
+        Self::single(object, symbol, drawn, dash_flag, font_size, index, warnings)
+            .map(|one| vec![one])
+    }
+
+    fn single(
         object: &MapObject,
         symbol: i32,
         drawn: Drawn,
@@ -153,6 +192,15 @@ impl FileObject {
                 coords
             }
         };
+        Self::with_header(header, coords, text)
+    }
+
+    /// An object of `header` with `coords` and `text`, counted in its header.
+    fn with_header(
+        mut header: ObjectHeader,
+        coords: Vec<FileCoord>,
+        text: Vec<u16>,
+    ) -> Result<Self> {
         header.coord_count = u32::try_from(coords.len())
             .map_err(|_too_many| Error::TooMany("object coordinates"))?;
         header.text_length = u16::try_from(text.len() / 4)
@@ -164,8 +212,10 @@ impl FileObject {
         })
     }
 
-    /// The object's index entry and bytes.
-    fn item(&self) -> Result<(ObjectIndexEntry, Vec<u8>)> {
+    /// The object's index entry and bytes. The entry's box is grown by
+    /// `extent`, in millimetres, for what the symbol draws beyond the
+    /// coordinates, as OCAD writes it.
+    fn item(&self, extent: f64) -> Result<(ObjectIndexEntry, Vec<u8>)> {
         let mut bytes = Cursor::new(Vec::new());
         self.header.write_le(&mut bytes)?;
         for coord in &self.coords {
@@ -197,10 +247,15 @@ impl FileObject {
         let (bottom_left, top_right) = if self.coords.is_empty() {
             (FileCoord::default(), FileCoord::default())
         } else {
-            (
-                FileCoord::from_coord(bottom_left)?,
-                FileCoord::from_coord(top_right)?,
-            )
+            // A symbol reaching past the coordinate range only clips its box.
+            let grown = |coord: Coord, by: f64| {
+                FileCoord::from_coord(Coord {
+                    x: coord.x + by,
+                    y: coord.y + by,
+                })
+                .or_else(|_out_of_range| FileCoord::from_coord(coord))
+            };
+            (grown(bottom_left, -extent)?, grown(top_right, extent)?)
         };
         let entry = ObjectIndexEntry {
             bottom_left,

@@ -2,8 +2,13 @@
 //!
 //! The file gives the real-world coordinates of the paper origin and the
 //! grid's rotation (grivation), so the reference point is the paper origin.
-//! The file has no declination of its own: the grivation is read as the
-//! declination with no convergence, which gives the same grivation. Its
+//! The file has no declination or latitude and longitude of its own. With
+//! the `geo_ref` feature, the reference point's latitude and longitude and
+//! the convergence there are computed, and the declination is the grivation
+//! plus that convergence, as Mapper reads it. Without it, the latitude and
+//! longitude stay 0, 0, and the grivation is read as the declination with no
+//! convergence, which gives the same grivation; so they do, with a warning,
+//! for a system the projection library cannot compute. Its
 //! coordinate reference system is a grid and zone code, which a table
 //! translates to EPSG codes where one exists.
 
@@ -79,7 +84,37 @@ pub(in crate::ocd) fn read_georef(
             ),
         }
     }
+    #[cfg(feature = "geo_ref")]
+    locate(&mut georef, warnings);
     (georef, grid_spacing)
+}
+
+/// The reference point's latitude and longitude and the convergence there,
+/// keeping the file's grivation and scale.
+#[cfg(feature = "geo_ref")]
+fn locate(georef: &mut GeoRef, warnings: &mut Warnings) {
+    if matches!(georef.crs_type, CrsType::Local) {
+        return;
+    }
+    match GeoRef::initialize(
+        georef.projected_ref_point,
+        georef.crs_type.clone(),
+        0.,
+        georef.scale_denominator,
+    ) {
+        Ok(located) => {
+            let grivation = georef.grivation_deg();
+            georef.geographic_ref_point_deg = located.geographic_ref_point_deg;
+            georef.convergence_deg = located.convergence_deg;
+            georef.declination_deg = grivation + located.convergence_deg;
+        }
+        Err(_cannot_locate) => push_once(
+            warnings,
+            Warning::Map(
+                "the reference point's latitude and longitude could not be computed; left at 0, 0",
+            ),
+        ),
+    }
 }
 
 /// The coordinate reference system a grid and zone code names. A negative

@@ -47,7 +47,8 @@ pub(in crate::ocd) fn read_view(strings: &[ParameterString], grid_spacing: Optio
 
 /// The notes string, if there are notes.
 pub(in crate::ocd) fn write_notes(notes: &str) -> Option<ParameterString> {
-    (!notes.is_empty()).then(|| ParameterString::new(kind::NOTES, &notes.replace('\n', "\r\n")))
+    (!notes.is_empty())
+        .then(|| ParameterString::free_text(kind::NOTES, &notes.replace('\n', "\r\n")))
 }
 
 /// The view string, with the fields Mapper writes.

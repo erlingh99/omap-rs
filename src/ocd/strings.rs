@@ -57,10 +57,24 @@ pub(in crate::ocd) struct ParameterString {
 
 impl ParameterString {
     /// A record of `kind` with `first` as its first field and nothing else.
+    ///
+    /// A tab in `first` would end the field and a NUL the record, so each is
+    /// written as a space; so are they in the values of [`Self::push`]. A
+    /// record of free text is made with [`Self::free_text`] instead.
     pub(in crate::ocd) fn new(kind: i32, first: &str) -> Self {
         Self {
             kind,
-            text: first.to_owned(),
+            text: without_separators(first),
+        }
+    }
+
+    /// A record of `kind` that is all free text, with no fields: a tab in
+    /// it is kept, and only a NUL, which would end the record, is written as
+    /// a space.
+    pub(in crate::ocd) fn free_text(kind: i32, text: &str) -> Self {
+        Self {
+            kind,
+            text: text.replace('\0', " "),
         }
     }
 
@@ -68,6 +82,7 @@ impl ParameterString {
     pub(in crate::ocd) fn push(&mut self, code: char, value: impl std::fmt::Display) {
         use std::fmt::Write as _;
         // Writing to a `String` cannot fail.
+        let value = without_separators(&value.to_string());
         let _infallible = write!(self.text, "\t{code}{value}");
     }
 
@@ -84,6 +99,11 @@ impl ParameterString {
             Some((code, chars.as_str()))
         })
     }
+}
+
+/// `text` with the tabs and NULs that end fields and records as spaces.
+fn without_separators(text: &str) -> String {
+    text.replace(['\t', '\0'], " ")
 }
 
 /// Every parameter string in `file` that is not deleted, in file order.
@@ -133,6 +153,20 @@ pub(in crate::ocd) fn number(value: &str) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::ParameterString;
+
+    #[test]
+    fn tabs_and_nuls_in_written_text_do_not_start_fields_or_end_the_record() {
+        let mut string = ParameterString::new(9, "Purple\tsZZZ");
+        string.push('n', "1\0after");
+        assert_eq!(string.first(), "Purple sZZZ");
+        assert_eq!(string.fields().collect::<Vec<_>>(), [('n', "1 after")]);
+    }
+
+    #[test]
+    fn free_text_keeps_its_tabs_and_only_a_nul_becomes_a_space() {
+        let string = ParameterString::free_text(1061, "a\tb\0c");
+        assert_eq!(string.text, "a\tb c");
+    }
 
     #[test]
     fn fields_follow_the_first_field_and_skip_empty_ones() {

@@ -143,7 +143,7 @@ impl Reader<'_> {
             })),
             Framing::LINE => {
                 // 0 is OCAD 8's default, miter; 4 is miter.
-                if framing.line_style != 0 && framing.line_style != 4 {
+                if framing.line_style != 0 && framing.line_style != Framing::MITER {
                     self.symbol_issue(
                         symbol.common.code,
                         "the framing line's joins are drawn mitered",

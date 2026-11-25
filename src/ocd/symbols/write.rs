@@ -12,7 +12,7 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 
-use binrw::BinWrite;
+use binrw::{BinRead as _, BinWrite};
 
 use super::SymbolIndexEntry;
 use super::raw::{
@@ -54,6 +54,18 @@ pub(in crate::ocd) struct WrittenSymbols {
 }
 
 impl WrittenSymbols {
+    /// The extent of each symbol written, by number: how far, in file
+    /// units, it draws beyond its objects' coordinates.
+    pub(in crate::ocd) fn extents(&self) -> HashMap<i32, i32> {
+        self.items
+            .iter()
+            .filter_map(|(_, bytes)| {
+                let base = BaseSymbol::read(&mut Cursor::new(bytes)).ok()?;
+                Some((base.number, base.extent))
+            })
+            .collect()
+    }
+
     /// The numbers objects of `symbol` are written under, and as what.
     pub(in crate::ocd) fn numbers(&self, symbol: SymbolId) -> &[(i32, Drawn)] {
         self.numbers.get(&symbol).map_or(&[], Vec::as_slice)
@@ -336,8 +348,13 @@ fn area_with_border<'a>(parts: &[Part<'a>], symbols: &'a SymbolSet) -> Option<Pl
     };
     let border_of = |part: &Part<'a>| match part {
         Part::Line(line) => Some(Border::Private(line)),
+        // A combined line borders the area only if it is written as one
+        // line symbol, under its own number.
         Part::Public(id) => match symbols.get(*id).map(crate::Entry::value) {
-            Some(Symbol::Line(_) | Symbol::CombinedLine(_)) => Some(Border::Public(*id)),
+            Some(Symbol::Line(_)) => Some(Border::Public(*id)),
+            Some(combined @ Symbol::CombinedLine(_)) => {
+                matches!(plan(combined, symbols), Plan::Line(_)).then_some(Border::Public(*id))
+            }
             _ => None,
         },
         Part::Area(_) => None,
@@ -595,7 +612,14 @@ fn extent(elements: &[Element]) -> i32 {
                     to_units(coord.x.hypot(coord.y))
                 })
                 .fold(0., f64::max);
-            let width = f64::from(element.header.line_width.max(element.header.diameter)) / 2.;
+            let line_width = f64::from(element.header.line_width);
+            let diameter = f64::from(element.header.diameter);
+            // A circle's diameter is to the middle of its ring.
+            let width = match element.header.element_type {
+                ElementHeader::CIRCLE => f64::midpoint(diameter, line_width),
+                ElementHeader::DOT => diameter / 2.,
+                _ => line_width / 2.,
+            };
             reach + width
         })
         .fold(0., f64::max)
@@ -844,15 +868,25 @@ impl Writer<'_> {
         };
         bytes.append(&tail)?;
         bytes.append_elements(&elements)?;
+        // As OCAD and Mapper reckon it: the widest of the lines, a double
+        // line with its borders, or the point symbols.
+        let double = [
+            tail.double_width,
+            tail.double_left_width,
+            tail.double_right_width,
+        ]
+        .into_iter()
+        .map(|width| i32::from(width.max(0)))
+        .sum::<i32>();
         let width = [
-            tail.line_width,
-            tail.framing_width.max(0).unsigned_abs(),
-            tail.double_width.max(0).unsigned_abs(),
+            i32::from(tail.line_width),
+            i32::from(tail.framing_width.max(0)),
+            double,
         ]
         .into_iter()
         .max()
         .unwrap_or(0);
-        bytes.finish(i32::from(width) / 2 + extent(&elements))
+        bytes.finish((width / 2).max(extent(&elements)))
     }
 
     /// The dash pattern of the main line.
@@ -1017,6 +1051,18 @@ impl Writer<'_> {
         tail.corner_data_size = data_size(&corner)?;
         tail.start_data_size = data_size(&start)?;
         tail.end_data_size = data_size(&end)?;
+        // OCAD 11 and later draw only the point symbols marked active, as
+        // OCAD itself and Mapper mark every one that has elements.
+        for (elements, flag) in [
+            (&secondary, LineTail::USE_SECONDARY),
+            (&corner, LineTail::USE_CORNER),
+            (&start, LineTail::USE_START),
+            (&end, LineTail::USE_END),
+        ] {
+            if !elements.is_empty() {
+                tail.active_symbols |= flag;
+            }
+        }
         for elements in [primary, secondary, corner, start, end] {
             all.extend(elements);
         }
@@ -1259,10 +1305,18 @@ impl Writer<'_> {
                 BasicText::BOTTOM
             }
         };
+        // OCAD text always has a color: one the file defines.
+        let color = if let Some(color) = self.color(&mut bytes, text.color) {
+            color
+        } else {
+            self.issue(code, "text in no color, or in one the file cannot hold, was written in registration black");
+            self.color(&mut bytes, SymbolColor::RegistrationBlack)
+                .unwrap_or_default()
+        };
         let mut tail = TextTail {
             basic: BasicText {
                 font_name: PascalString31::new(&text.font_family),
-                color: self.color(&mut bytes, text.color).unwrap_or(0),
+                color,
                 font_size: (text.font_size.get() / MM_PER_POINT * 10.)
                     .round()
                     .clamp(0., f64::from(u16::MAX)) as u16,
@@ -1299,16 +1353,23 @@ impl Writer<'_> {
         }
         match &text.framing_mode {
             None | Some(FramingMode::NoFraming) => (),
+            // Framing in no color draws nothing, as no framing does.
             Some(FramingMode::ShadowFraming(shadow)) => {
-                tail.framing.mode = Framing::SHADOW;
-                tail.framing.color = self.color(&mut bytes, shadow.color).unwrap_or(0);
-                tail.framing.offset_x = units_i16(shadow.shadow_offset.x);
-                tail.framing.offset_y = units_i16(shadow.shadow_offset.y);
+                if let Some(color) = self.color(&mut bytes, shadow.color) {
+                    tail.framing.mode = Framing::SHADOW;
+                    tail.framing.color = color;
+                    tail.framing.offset_x = units_i16(shadow.shadow_offset.x);
+                    tail.framing.offset_y = units_i16(shadow.shadow_offset.y);
+                }
             }
             Some(FramingMode::LineFraming(line)) => {
-                tail.framing.mode = Framing::LINE;
-                tail.framing.color = self.color(&mut bytes, line.color).unwrap_or(0);
-                tail.framing.line_width = units_u16(line.framing_line_half_width.get());
+                if let Some(color) = self.color(&mut bytes, line.color) {
+                    tail.framing.mode = Framing::LINE;
+                    // Miter joins, as Mapper draws framing and writes it.
+                    tail.framing.line_style = Framing::MITER;
+                    tail.framing.color = color;
+                    tail.framing.line_width = units_u16(line.framing_line_half_width.get());
+                }
             }
         }
         bytes.append(&tail)?;

@@ -148,6 +148,7 @@ pub(in crate::ocd) struct LineTail {
     pub(in crate::ocd) corner_data_size: u16,
     pub(in crate::ocd) start_data_size: u16,
     pub(in crate::ocd) end_data_size: u16,
+    /// Which of the point symbols OCAD 11 and later draw: the `USE_*` bits.
     pub(in crate::ocd) active_symbols: u8,
     pub(in crate::ocd) reserved_3: u8,
 }
@@ -176,6 +177,15 @@ impl LineTail {
     pub(in crate::ocd) const DOUBLE_BORDERS_DASHED: u16 = 3;
     /// Double line mode: the borders and the filling are dashed.
     pub(in crate::ocd) const DOUBLE_ALL_DASHED: u16 = 4;
+
+    /// Active symbol: the end symbol is drawn.
+    pub(in crate::ocd) const USE_END: u8 = 0x01;
+    /// Active symbol: the start symbol is drawn.
+    pub(in crate::ocd) const USE_START: u8 = 0x02;
+    /// Active symbol: the corner symbol is drawn.
+    pub(in crate::ocd) const USE_CORNER: u8 = 0x04;
+    /// Active symbol: the secondary symbol is drawn.
+    pub(in crate::ocd) const USE_SECONDARY: u8 = 0x08;
 
     /// Double line flag: the filling has a color.
     pub(in crate::ocd) const DOUBLE_FILL_ON: u16 = 0x01;
@@ -313,6 +323,8 @@ impl Framing {
     pub(in crate::ocd) const NONE: u8 = 0;
     pub(in crate::ocd) const SHADOW: u8 = 1;
     pub(in crate::ocd) const LINE: u8 = 2;
+    /// Framing line style: miter joins.
+    pub(in crate::ocd) const MITER: u8 = 4;
 }
 
 /// What follows the base of a text symbol.

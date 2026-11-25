@@ -123,7 +123,8 @@ pub struct View {
     pub zoom: NonNegativeF64,
     /// View rotation in radians (counter-clockwise).
     pub rotation: f64,
-    /// Horizontal position of the view centre (in mm map coordinates).
+    /// Position of the view centre, in mm map coordinates: y up, as the
+    /// objects' coordinates are.
     pub view_centre: Coord,
     /// Visibility of the map drawing itself.
     pub map_visibility: TemplateVisibility,

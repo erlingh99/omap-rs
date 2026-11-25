@@ -25,10 +25,14 @@ pub trait Format: Send + Sync {
 
     /// Write `map`.
     ///
+    /// What the format cannot hold exactly is approximated or left out, as
+    /// that format's module documents; a module may also offer a write that
+    /// reports what was approximated, such as `ocd::write`.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the map cannot be expressed in this format, or the
-    /// output cannot be written.
+    /// Returns an error if the map cannot be written in this format at all,
+    /// or the output cannot be written.
     fn write(&self, map: &Omap, writer: &mut dyn Write) -> Result<(), Error>;
 }
 

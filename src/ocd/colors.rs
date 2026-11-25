@@ -24,7 +24,7 @@ use crate::{NonNegativeF64, UnitF64};
 const REGISTRATION_BLACK: &str = "Registration black";
 
 /// How far CMYK may differ from the one its spot colors make and still be
-/// taken as made by them: the file stores half percents.
+/// taken as made by them: half a percent.
 const CMYK_TOLERANCE: f64 = 0.005;
 
 /// The file's color numbers, and the colors they name.
@@ -85,6 +85,10 @@ pub(in crate::ocd) fn read_colors(
         .collect();
 
     for (id, overprint, shares) in pending_components {
+        let id = MixedColorId(id.0);
+        if let Some(color) = colors.mixed_color_mut(id) {
+            color.knockout = !overprint;
+        }
         if shares.is_empty() {
             continue;
         }
@@ -95,10 +99,8 @@ pub(in crate::ocd) fn read_colors(
                 color: spot_ids[separation],
             })
             .collect();
-        let id = MixedColorId(id.0);
         if let Some(color) = colors.mixed_color_mut(id) {
             color.components = components;
-            color.knockout = !overprint;
         }
         let made_by_spot_colors = colors.mixed_color(id).is_some_and(|color| {
             let stated = color.cmyk(&colors);

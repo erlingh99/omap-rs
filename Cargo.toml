@@ -33,7 +33,7 @@ default = ["xml"]
 # default maps, which are stored in it.
 xml = ["dep:quick-xml"]
 
-# The OCAD format (`.ocd`), versions 12, 13 and 2018.
+# The OCAD format (`.ocd`), versions 12 and 2018.
 ocd = ["dep:binrw"]
 
 geo_ref = [

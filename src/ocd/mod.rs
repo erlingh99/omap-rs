@@ -6,7 +6,10 @@
 //!
 //! OCAD and the map model do not describe exactly the same things. Reading
 //! and writing never fail on a feature only one side has: they skip or
-//! approximate it and report a [`Warning`].
+//! approximate it, and report a [`Warning`] for what the map draws
+//! differently. What only OCAD's own settings hold, such as print and export
+//! settings or display options the map has no place for, is left out
+//! without one, as Mapper leaves it out.
 
 mod colors;
 mod error;
@@ -33,6 +36,9 @@ use file::{FileHeader, Layout, OCAD_MARK, OcdFile};
 use warning::Warnings;
 
 /// The OCAD format: `.ocd` files.
+///
+/// Through [`format::Format`], what could not be read or written exactly is
+/// not reported; [`read()`] and [`write()`] return it as warnings.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Ocd;
 
