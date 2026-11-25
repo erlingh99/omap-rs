@@ -1,11 +1,6 @@
 //! Choosing a file format by extension, and reading and writing through it.
 
 #![cfg(feature = "xml")]
-#![expect(
-    clippy::expect_used,
-    reason = "a test should fail loudly at the point it breaks"
-)]
-
 use omap::{Omap, format};
 
 const ISOM_15000: &[u8] = include_bytes!("../src/default_maps/isom_15000.omap");
