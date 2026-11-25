@@ -14,11 +14,11 @@ It is not enabled by default because of the extra dependencies needed (Proj4rs f
 **NB!** if you change any field (or the entire thing) in the map's `geo_referencing`-field then all the map objects projected/geographic positions will change as their coordinates are given in mm-of-paper and remain untouched.
 The best practice is to set the map's geo referencing before adding any objects.
 
-`omap::geo_referencing::MapTransform` provides functions for going back and forth between mm-of-paper and projected coordinates given by the map's georeferencing. Obtain one by calling `create_transform` on the map's `geo_referencing` field.
+`omap::geo_referencing::MapTransform` goes back and forth between mm-of-paper and projected coordinates given by the map's georeferencing, with `to_projected` and `to_map`. Obtain one by calling `create_transform` on the map's `geo_referencing` field. Both take any `omap::Transformable` geometry: a `Coord`, `Point`, `LineString`, `Polygon`, `BezierString`, `BezierPath` or `BezierPolygon`.
 
 `MapTransform::transform_between` can be used to keep objects and non-georeferenced templates at the same real-world positions after changing the map's georeferencing. Without `geo_ref`, both maps must use the same projection; with `geo_ref`, differing projections are converted automatically.
 
-With the `geo_ref`-feature the same `MapTransform` also reaches WGS84 (`x` longitude, `y` latitude, in degrees) without a second projection dependency: `to_wgs84`, `to_wgs84_polygon`, `to_wgs84_bezierpath` and the rest of the family go from mm-of-paper all the way to degrees, and the `from_wgs84`-family comes back.
+With the `geo_ref`-feature the same `MapTransform` also reaches WGS84 (`x` longitude, `y` latitude, in degrees) without a second projection dependency: `to_wgs84` goes from mm-of-paper all the way to degrees, and `from_wgs84` comes back, for the same geometries.
 They chain the paper ↔ projected step with a projection between the map's CRS and WGS84, resolved through `CrsType::to_crs_def`, the same resolution `GeoRef::initialize` uses.
 That projection is compiled on first use and kept, so hold on to the transform instead of calling `create_transform` per object.
 
@@ -113,10 +113,12 @@ fn main() -> Result<(), Error> {
     ls.tags.insert("Some Key".to_string(), "My value".to_string());
 
     // A map can have multiple parts let's add the object to the first one
-    map.parts
-        .get_mut(0)
+    let _id = map
+        .parts
+        .at_mut(0)
         .expect("a default map contains one map part")
-        .add_object(ls);
+        .objects
+        .push(ls);
 
     // O-mapper makes no difference between combined line symbols and combined area symbols, but we do
     // This will debug-print a `CombinedLineSymbol`

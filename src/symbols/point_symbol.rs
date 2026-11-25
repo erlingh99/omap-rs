@@ -281,25 +281,9 @@ impl PointSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<ColorId> {
-        let mut colors = Vec::new();
-
-        if let SymbolColor::Color(id) = &self.inner_color {
-            colors.push(*id);
-        }
-        if let SymbolColor::Color(id) = &self.outer_color {
-            colors.push(*id);
-        }
-
-        for element in &self.elements {
-            colors.extend(match element {
-                Element::Point { symbol, object: _ } => symbol.colors(),
-                Element::Line { symbol, object: _ } => symbol.colors(),
-                Element::Area { symbol, object: _ } => symbol.colors(),
-            });
-        }
-
-        colors
+    /// Every color used in this symbol definition, its elements' included.
+    pub fn colors(&self) -> impl Iterator<Item = ColorId> {
+        crate::references::own_colors(self)
     }
 
     pub(super) fn parse<R: std::io::BufRead>(

@@ -1,3 +1,4 @@
+use super::combined_area_symbol::UnresolvedPart;
 use quick_xml::{
     Reader, Writer,
     events::{BytesEnd, BytesStart, BytesText, Event},
@@ -184,32 +185,29 @@ impl Symbol {
     /// Takes the [`SymbolSet`] that owns the symbol, because a combined
     /// symbol's public components live in the set rather than in the symbol.
     /// A component no longer in the set contributes no colors.
-    pub fn colors(&self, symbol_set: &SymbolSet) -> Vec<ColorId> {
-        match self {
-            Self::Line(symbol) => symbol.colors(),
-            Self::Area(symbol) => symbol.colors(),
-            Self::Point(symbol) => symbol.colors(),
-            Self::Text(symbol) => symbol.colors(),
-            Self::CombinedArea(symbol) => symbol.colors(symbol_set),
-            Self::CombinedLine(symbol) => symbol.colors(symbol_set),
-        }
+    pub fn colors<'a>(&'a self, symbol_set: &'a SymbolSet) -> impl Iterator<Item = ColorId> {
+        crate::references::colors_through(self, symbol_set)
     }
 
     impl_symbol_getter!(custom_icon -> Option<&str>, |s| s.custom_icon.as_deref());
     impl_symbol_getter!(has_custom_icon -> bool, |s| s.custom_icon.is_some());
-    impl_symbol_setter!(set_custom_icon(icon: Option<String>), |s| s.custom_icon = icon);
+    impl_symbol_setter!(set_custom_icon(icon: Option<String>), |s| s.custom_icon =
+        icon);
     impl_symbol_getter!(code -> Code, |s| s.code);
     impl_symbol_setter!(set_code(code: Code), |s| s.code = code);
     impl_symbol_getter!(is_helper_symbol -> bool, |s| s.is_helper_symbol);
-    impl_symbol_setter!(set_helper_symbol(is_helper: bool), |s| s.is_helper_symbol = is_helper);
+    impl_symbol_setter!(set_helper_symbol(is_helper: bool), |s| s.is_helper_symbol =
+        is_helper);
     impl_symbol_getter!(is_hidden -> bool, |s| s.is_hidden);
     impl_symbol_setter!(set_hidden(is_hidden: bool), |s| s.is_hidden = is_hidden);
     impl_symbol_getter!(is_protected -> bool, |s| s.is_protected);
-    impl_symbol_setter!(set_protected(is_protected: bool), |s| s.is_protected = is_protected);
+    impl_symbol_setter!(set_protected(is_protected: bool), |s| s.is_protected =
+        is_protected);
     impl_symbol_getter!(name -> &str, |s| s.name.as_str());
     impl_symbol_setter!(set_name(name: String), |s| s.name = name);
     impl_symbol_getter!(description -> &str, |s| s.description.as_str());
-    impl_symbol_setter!(set_description(description: String), |s| s.description = description);
+    impl_symbol_setter!(set_description(description: String), |s| s.description =
+        description);
 
     /// The kind of this symbol, which is also the kind of any handle to it.
     pub fn kind(&self) -> SymbolKind {
@@ -227,7 +225,7 @@ impl Symbol {
         reader: &mut Reader<R>,
         element: &BytesStart<'_>,
         color_set: &ColorSet,
-    ) -> Result<(usize, Self, Vec<usize>)> {
+    ) -> Result<(usize, Self, Vec<UnresolvedPart>)> {
         let mut id = usize::MAX;
         let mut symbol_type = u8::MAX;
         let mut common = SymbolCommon::default();
@@ -255,7 +253,7 @@ impl Symbol {
         }
 
         // Components can only be resolved once every symbol is parsed.
-        let mut public_component_ids = Vec::new();
+        let mut unresolved = Vec::new();
         let symbol = match symbol_type {
             1 => Self::Point(Box::new(PointSymbol::parse(reader, color_set, common)?)),
             2 => Self::Line(Box::new(LineSymbol::parse(reader, color_set, common)?)),
@@ -263,8 +261,8 @@ impl Symbol {
             8 => Self::Text(Box::new(TextSymbol::parse(reader, color_set, common)?)),
             16 => {
                 // Reclassified as a line symbol later if its components say so.
-                let (symbol, component_ids) = CombinedAreaSymbol::parse(reader, color_set, common)?;
-                public_component_ids.extend(component_ids);
+                let (symbol, parts) = CombinedAreaSymbol::parse(reader, color_set, common)?;
+                unresolved = parts;
 
                 Self::CombinedArea(Box::new(symbol))
             }
@@ -273,7 +271,7 @@ impl Symbol {
             }
         };
 
-        Ok((id, symbol, public_component_ids))
+        Ok((id, symbol, unresolved))
     }
 
     pub(super) fn write<W: std::io::Write>(

@@ -1,12 +1,10 @@
 mod color;
-mod color_ref;
 mod color_set;
 mod ids;
 
 use std::str::FromStr;
 
 pub use color::{Color, ColorComponent, MixedColor, SpotColor, SymbolColor};
-pub use color_ref::ColorRef;
 pub use color_set::ColorSet;
 pub(crate) use ids::ColorKey;
 pub use ids::{ColorId, ColorKind, MixedColorId, SpotColorId};

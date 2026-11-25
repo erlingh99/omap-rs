@@ -3,66 +3,42 @@ use quick_xml::{
     events::{BytesEnd, BytesStart, Event},
 };
 
-use super::MapPart;
-use crate::{Error, OmapSection, Result, symbols::SymbolSet};
+use super::{MapPart, PartId};
+use crate::{Collection, Error, OmapSection, Result, symbols::SymbolSet};
 
-/// An ordered collection of map parts (layers).
-#[derive(Debug, Default, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct MapParts(Vec<MapPart>);
+/// The map's parts (layers), in file order. See [`Collection`] for everything
+/// a set does.
+pub type MapParts = Collection<PartId, MapPart>;
 
 impl MapParts {
-    /// Create a new empty [`MapParts`] object
-    pub fn new() -> Self {
-        Self(Vec::new())
-    }
-
-    /// Create a new [`MapParts`] object with a [`MapPart`] named "Map"
+    /// A collection holding one empty part named "Map".
     pub fn new_with_default_part() -> Self {
-        Self(vec![MapPart::new("Map")])
+        std::iter::once(MapPart::new("Map")).collect()
     }
 
-    /// Add a new map part to the end of the collection.
-    pub fn push(&mut self, part: MapPart) {
-        self.0.push(part);
-    }
-
-    /// Get the number of map parts.
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    /// Returns `true` if there are no map parts.
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Merge all map parts into a single part
+    /// Merge all map parts into the first one, which keeps its handle. The
+    /// moved objects get new handles in it; their old ones no longer resolve.
+    /// The merged parts' handles must not be restored: their objects now live
+    /// in the first part.
     /// If `new_name` is some, then the new name is applied, else the name of the first map part is kept
     pub fn merge_all_parts(&mut self, new_name: Option<String>) {
-        if self.0.len() > 1 {
-            let mut first = self.0.remove(0);
-
-            let mut pop_parts = Vec::with_capacity(self.0.len());
-            while let Some(part) = self.0.pop() {
-                pop_parts.push(part);
+        while let Some(removed) = self.remove_at(1) {
+            if let Some(first) = self.at_mut(0) {
+                first.merge(removed.value());
             }
-
-            for part in pop_parts.into_iter().rev() {
-                first.merge(part);
-            }
-            self.0.push(first);
         }
 
         if let Some(name) = new_name
-            && let Some(first) = self.0.first_mut()
+            && let Some(first) = self.at_mut(0)
         {
             first.name = name;
         }
     }
 
     /// Merge two of the map parts.
-    /// The second part is merged into the first part. The name of the first part is kept
+    /// The second part is merged into the first part. The name and handle of the first part are kept;
+    /// the moved objects get new handles in it and their old ones no longer resolve. The second
+    /// part's handle must not be restored: its objects now live in the first part.
     /// The order of parts is also kept
     ///
     /// # Errors
@@ -72,89 +48,29 @@ impl MapParts {
     pub fn merge_two_parts(&mut self, mut part_1_index: usize, part_2_index: usize) -> Result<()> {
         if part_1_index >= self.len() || part_2_index >= self.len() || part_1_index == part_2_index
         {
-            Err(Error::MapPartMergeError)
-        } else {
-            let part2 = self.0.remove(part_2_index);
-            if part_1_index > part_2_index {
-                part_1_index -= 1;
-            }
-            self.0[part_1_index].merge(part2);
-            Ok(())
+            return Err(Error::MapPartMergeError);
         }
+        let part2 = self
+            .remove_at(part_2_index)
+            .ok_or(Error::MapPartMergeError)?;
+        if part_1_index > part_2_index {
+            part_1_index -= 1;
+        }
+        self.at_mut(part_1_index)
+            .ok_or(Error::MapPartMergeError)?
+            .merge(part2.value());
+        Ok(())
     }
 
-    /// Remove and return the map part at the given index, or `None` if out of bounds.
-    pub fn remove(&mut self, index: usize) -> Option<MapPart> {
-        if index < self.len() {
-            Some(self.0.remove(index))
-        } else {
-            None
-        }
-    }
-
-    /// Case sensitive
+    /// The first part with this name. Case sensitive.
     pub fn by_name(&self, name: &str) -> Option<&MapPart> {
-        self.0.iter().find(|p| p.name.as_str() == name)
+        self.values().find(|p| p.name.as_str() == name)
     }
 
-    /// Case sensitive
+    /// The first part with this name, to change. Case sensitive.
     pub fn by_name_mut(&mut self, name: &str) -> Option<&mut MapPart> {
-        self.0.iter_mut().find(|p| p.name.as_str() == name)
-    }
-
-    /// Get a map part by its index.
-    pub fn get(&self, index: usize) -> Option<&MapPart> {
-        if index >= self.0.len() {
-            None
-        } else {
-            Some(&self.0[index])
-        }
-    }
-
-    /// Get a mutable reference to a map part by its index.
-    pub fn get_mut(&mut self, index: usize) -> Option<&mut MapPart> {
-        if index >= self.0.len() {
-            None
-        } else {
-            Some(&mut self.0[index])
-        }
-    }
-
-    /// Iterate over map parts.
-    pub fn iter(&self) -> std::slice::Iter<'_, MapPart> {
-        self.0.iter()
-    }
-
-    /// Iterate mutably over map parts.
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, MapPart> {
-        self.0.iter_mut()
-    }
-}
-
-impl IntoIterator for MapParts {
-    type Item = MapPart;
-    type IntoIter = std::vec::IntoIter<MapPart>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl<'a> IntoIterator for &'a MapParts {
-    type Item = &'a MapPart;
-    type IntoIter = std::slice::Iter<'a, MapPart>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl<'a> IntoIterator for &'a mut MapParts {
-    type Item = &'a mut MapPart;
-    type IntoIter = std::slice::IterMut<'a, MapPart>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter_mut()
+        let index = self.values().position(|p| p.name.as_str() == name)?;
+        self.at_mut(index)
     }
 }
 
@@ -165,12 +81,12 @@ impl MapParts {
         symbols: &SymbolSet,
     ) -> Result<()> {
         writer.write_event(Event::Start(BytesStart::new("parts").with_attributes([
-            ("count", self.0.len().to_string().as_str()),
+            ("count", self.len().to_string().as_str()),
             ("current", "0"),
         ])))?;
         writer.get_mut().write_all(b"\n")?;
 
-        for part in &self.0 {
+        for part in self.values() {
             part.write(writer, symbols)?;
             writer.get_mut().write_all(b"\n")?;
         }
@@ -183,14 +99,14 @@ impl MapParts {
         reader: &mut Reader<R>,
         symbols: &SymbolSet,
     ) -> Result<Self> {
-        let mut parts = Vec::new();
+        let mut parts = Self::new();
 
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf)? {
                 Event::Start(bytes_start) => {
                     if matches!(bytes_start.local_name().as_ref(), "part") {
-                        parts.push(MapPart::parse(reader, &bytes_start, symbols)?);
+                        let _id = parts.push(MapPart::parse(reader, &bytes_start, symbols)?);
                     }
                 }
                 Event::End(_) => break,
@@ -201,6 +117,6 @@ impl MapParts {
             }
         }
 
-        Ok(Self(parts))
+        Ok(parts)
     }
 }

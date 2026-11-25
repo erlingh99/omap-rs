@@ -31,6 +31,8 @@ fn handles_are_copy_and_hashable() {
     assert_handle::<omap::symbols::PathSymbolId>();
     assert_handle::<omap::colors::ColorId>();
     assert_handle::<omap::colors::SpotColorId>();
+    assert_handle::<omap::objects::ObjectId>();
+    assert_handle::<omap::parts::PartId>();
 }
 
 #[test]
@@ -61,10 +63,10 @@ fn handles_survive_a_clone() -> Result<()> {
 
     let clone = map.clone();
     assert_eq!(
-        clone.symbols.get(id).map(|found| found.symbol().name()),
+        clone.symbols.get(id).map(|found| found.value().name()),
         Some(name.as_str())
     );
-    assert_eq!(clone.symbols.index_of(id), map.symbols.index_of(id));
+    assert_eq!(clone.symbols.position(id), map.symbols.position(id));
     Ok(())
 }
 
@@ -80,7 +82,7 @@ fn a_removed_symbol_stops_resolving() -> Result<()> {
 
     assert!(!map.symbols.contains(id));
     assert!(map.symbols.get(id).is_none());
-    assert!(map.symbols.index_of(id).is_none());
+    assert!(map.symbols.position(id).is_none());
     Ok(())
 }
 

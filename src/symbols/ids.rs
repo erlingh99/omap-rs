@@ -1,6 +1,6 @@
 slotmap::new_key_type! {
     /// The arena slot a symbol handle names.
-    pub(crate) struct SymbolKey;
+    pub struct SymbolKey;
 }
 
 /// The kind of a symbol.
@@ -35,7 +35,7 @@ impl SymbolKind {
     }
 }
 
-/// Widening a typed handle is infallible. Narrowing a [`crate::symbols::SymbolRef`]
+/// Widening a typed handle is infallible. Narrowing an [`crate::Entry`] of a symbol
 /// checks the kind of the referenced symbol.
 macro_rules! symbol_ids {
     ($(
@@ -59,10 +59,10 @@ macro_rules! symbol_ids {
                 }
             )*
 
-            impl TryFrom<crate::symbols::SymbolRef<'_>> for $name {
+            impl TryFrom<crate::Entry<'_, SymbolId, crate::symbols::Symbol>> for $name {
                 type Error = crate::Error;
 
-                fn try_from(value: crate::symbols::SymbolRef<'_>) -> crate::Result<Self> {
+                fn try_from(value: crate::Entry<'_, SymbolId, crate::symbols::Symbol>) -> crate::Result<Self> {
                     const EXPECTED: &[SymbolKind] = &[$(SymbolKind::$kind),+];
                     let found = value.kind();
                     if EXPECTED.contains(&found) {
@@ -115,3 +115,5 @@ symbol_ids! {
     /// A handle to a [`crate::symbols::CombinedAreaSymbol`].
     CombinedAreaSymbolId(CombinedArea) => [AreaPathSymbolId, PathSymbolId, SymbolId];
 }
+
+crate::collection::impl_handle!(SymbolId, SymbolKey);

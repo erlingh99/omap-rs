@@ -13,14 +13,14 @@ impl CombinedLineSymbol {
         let mut min = f64::MAX;
         for part in self.components() {
             let length = match part {
-                PublicOrPrivateSymbol::Public(id) => match symbol_set
-                    .get(SymbolId::from(*id))
-                    .map(|symbol| symbol.symbol())
-                {
-                    Some(Symbol::Line(symbol)) => symbol.minimum_length.get(),
-                    Some(Symbol::CombinedLine(symbol)) => symbol.minimum_length(symbol_set),
-                    _ => 0.,
-                },
+                PublicOrPrivateSymbol::Public(Some(id)) => {
+                    match symbol_set.get(SymbolId::from(*id)).map(crate::Entry::value) {
+                        Some(Symbol::Line(symbol)) => symbol.minimum_length.get(),
+                        Some(Symbol::CombinedLine(symbol)) => symbol.minimum_length(symbol_set),
+                        _ => 0.,
+                    }
+                }
+                PublicOrPrivateSymbol::Public(None) => 0.,
                 PublicOrPrivateSymbol::Private(symbol) => symbol.minimum_length.get(),
             };
             if length > 0. {
@@ -34,7 +34,7 @@ impl CombinedLineSymbol {
     ///
     /// Takes the [`SymbolSet`] that owns the public components. A component no
     /// longer in the set contributes no colors.
-    pub fn colors(&self, symbol_set: &SymbolSet) -> Vec<ColorId> {
-        self.component_colors(symbol_set)
+    pub fn colors<'a>(&'a self, symbol_set: &'a SymbolSet) -> impl Iterator<Item = ColorId> {
+        crate::references::colors_through(self, symbol_set)
     }
 }

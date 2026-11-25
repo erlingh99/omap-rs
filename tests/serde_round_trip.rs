@@ -53,8 +53,7 @@ fn reference_graph(map: &Omap) -> ReferenceGraph {
         .map(|(index, symbol)| {
             let used = symbol
                 .colors(&map.symbols)
-                .into_iter()
-                .filter_map(|color| map.colors.priority_of(color))
+                .filter_map(|color| map.colors.position(color))
                 .collect();
             (
                 index,
@@ -69,7 +68,7 @@ fn reference_graph(map: &Omap) -> ReferenceGraph {
         ids.into_iter()
             .map(|id| {
                 let id = id?;
-                map.symbols.index_of(id)
+                map.symbols.position(id)
             })
             .collect::<Vec<_>>()
     };
@@ -82,14 +81,14 @@ fn reference_graph(map: &Omap) -> ReferenceGraph {
                 Symbol::CombinedArea(combined) => combined
                     .components()
                     .map(|part| match part {
-                        PublicOrPrivateSymbol::Public(id) => Some(SymbolId::from(*id)),
+                        PublicOrPrivateSymbol::Public(id) => id.map(SymbolId::from),
                         PublicOrPrivateSymbol::Private(_) => None,
                     })
                     .collect(),
                 Symbol::CombinedLine(combined) => combined
                     .components()
                     .map(|part| match part {
-                        PublicOrPrivateSymbol::Public(id) => Some(SymbolId::from(*id)),
+                        PublicOrPrivateSymbol::Public(id) => id.map(SymbolId::from),
                         PublicOrPrivateSymbol::Private(_) => None,
                     })
                     .collect(),
@@ -103,7 +102,7 @@ fn reference_graph(map: &Omap) -> ReferenceGraph {
         .iter_all_objects()
         .map(|object| {
             let id = object.symbol()?;
-            map.symbols.index_of(id)
+            map.symbols.position(id)
         })
         .collect();
 
@@ -151,14 +150,14 @@ fn handles_resolve_to_the_same_symbols_after_a_round_trip() -> Result<()> {
 
     for (index, symbol) in map.symbols.iter().enumerate() {
         let id = symbol.id();
-        assert_eq!(map.symbols.index_of(id), Some(index));
+        assert_eq!(map.symbols.position(id), Some(index));
 
         // The original handle, used verbatim against the restored map.
         let restored_symbol = restored.symbols.get(id).expect("the old handle resolves");
         assert_eq!(restored_symbol.name(), symbol.name());
         assert_eq!(restored_symbol.common().code, symbol.common().code);
         assert_eq!(
-            restored.symbols.index_of(id),
+            restored.symbols.position(id),
             Some(index),
             "a handle must keep its position across a round trip"
         );
@@ -176,7 +175,7 @@ fn a_removal_survives_a_round_trip_without_pruning() -> Result<()> {
     let survivor = map.symbols.ids().nth(4).expect("a fifth symbol");
 
     let _removed = map.symbols.remove(doomed);
-    let added = map.symbols.add_symbol(omap::symbols::PointSymbol::new(
+    let added = map.symbols.push(omap::symbols::PointSymbol::new(
         omap::Code::new(9, 9, 9),
         "added",
     ));
@@ -195,8 +194,8 @@ fn a_removal_survives_a_round_trip_without_pruning() -> Result<()> {
         "a handle taken before the round trip must still resolve"
     );
     assert_eq!(
-        restored.symbols.index_of(survivor),
-        map.symbols.index_of(survivor),
+        restored.symbols.position(survivor),
+        map.symbols.position(survivor),
         "the survivor must keep its file index"
     );
     assert!(restored.symbols.get(added).is_some());

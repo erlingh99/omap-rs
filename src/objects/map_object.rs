@@ -7,16 +7,17 @@ use crate::{
     Error, Result,
     objects::{HorizontalAlign, VerticalAlign},
     symbols::{
-        AreaPathSymbolId, LinePathSymbolId, PointSymbolId, SymbolId, SymbolRef, SymbolSet,
-        TextSymbolId,
+        AreaPathSymbolId, LinePathSymbolId, PointSymbolId, SymbolId, SymbolSet, TextSymbolId,
     },
     utils::parse_attr_raw,
 };
 
 /// Narrow the handle an object names to the kind that object can render.
-fn narrow<'a, T>(symbol: Option<SymbolRef<'a>>) -> Result<Option<T>>
+fn narrow<'a, T>(
+    symbol: Option<crate::Entry<'a, SymbolId, crate::symbols::Symbol>>,
+) -> Result<Option<T>>
 where
-    T: TryFrom<SymbolRef<'a>, Error = Error>,
+    T: TryFrom<crate::Entry<'a, SymbolId, crate::symbols::Symbol>, Error = Error>,
 {
     symbol.map(T::try_from).transpose()
 }
@@ -203,7 +204,7 @@ impl MapObject {
         {
             Some(
                 symbols
-                    .find_at(usize::try_from(sid)?)
+                    .at(usize::try_from(sid)?)
                     .ok_or(Error::UnknownObjectSymbolId(sid))?,
             )
         } else {

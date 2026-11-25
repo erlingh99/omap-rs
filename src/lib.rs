@@ -3,7 +3,8 @@
 //! All map coordinates are given in millimetres on paper, relative to the
 //! reference point, with the positive y-axis pointing towards magnetic north.
 
-mod arena;
+/// The ordered, copy-on-write collection every set in a map is.
+pub mod collection;
 /// Color definitions: color set, spot colors, mixed colors, CMYK, RGB.
 pub mod colors;
 mod format_info;
@@ -16,7 +17,7 @@ pub mod objects;
 pub mod omap;
 /// Map parts (layers) and their contained objects.
 pub mod parts;
-mod prune;
+mod references;
 /// Symbol definitions: point, line, area, text, and combined symbols.
 pub mod symbols;
 /// Background-template support (images, tracks, GDAL/OGR layers).
@@ -27,6 +28,8 @@ pub mod view;
 
 use std::{fmt::Debug, io::BufWriter};
 
+pub use collection::{Collection, Entry, Removed};
+pub use geo_referencing::Transformable;
 /// Re-export `geo_types` for convenience for downstream users
 pub use geo_types;
 pub use omap::Omap;
@@ -164,6 +167,14 @@ pub enum Error {
     /// An XML escape-sequence error.
     #[error(transparent)]
     EscapeError(#[from] quick_xml::escape::EscapeError),
+    /// A position is past the end of a collection.
+    #[error("position {position} is out of range for a collection of {len}")]
+    PositionOutOfRange {
+        /// The position asked for.
+        position: usize,
+        /// The number of items in the collection.
+        len: usize,
+    },
     /// Map parts could not be merged (indices out of range or identical).
     #[error("Could not merge map parts. Check that the indices are different and in range")]
     MapPartMergeError,
@@ -386,21 +397,25 @@ pub enum Error {
 /// The reason an [`Omap`] cannot be safely serialized without losing references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum ValidationError {
+    /// A mixed color has a component whose spot color is not owned by the
+    /// map's color set.
+    #[error("color at index {color_index} mixes in a color not in the color set")]
+    DanglingColorComponent {
+        /// The index (priority) of the mixed color in its color set.
+        color_index: usize,
+    },
     /// A symbol references a color that is not owned by the map's color set.
     #[error("symbol at index {symbol_index} references a color not in the color set")]
     DanglingSymbolColor {
         /// The index of the symbol in its symbol set.
         symbol_index: usize,
     },
-    /// A public component of a combined symbol is not owned by the symbol set.
-    #[error(
-        "combined symbol at index {symbol_index} has component {component_index} not in the symbol set"
-    )]
+    /// A public part of a combined symbol names a symbol not owned by the
+    /// symbol set.
+    #[error("combined symbol at index {symbol_index} has a part not in the symbol set")]
     DanglingCombinedComponent {
         /// The index of the combined symbol in its symbol set.
         symbol_index: usize,
-        /// The index of the component within that combined symbol.
-        component_index: usize,
     },
     /// An object references a symbol that is not owned by the symbol set.
     #[error("object at index {object_index} references a symbol not in the symbol set")]

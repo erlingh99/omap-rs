@@ -3,7 +3,7 @@
 
 use omap::{
     Code, Omap, Result,
-    colors::{ColorId, ColorKind, ColorRef, MixedColorId, SpotColorId},
+    colors::{ColorId, ColorKind, MixedColorId, SpotColorId},
     symbols::{
         LinePathSymbolId, LineSymbolId, PathSymbolId, PointSymbolId, Symbol, SymbolId, SymbolKind,
     },
@@ -29,7 +29,7 @@ fn a_lookup_reads_the_symbol_and_yields_the_handle() -> Result<()> {
     assert_eq!(
         map.symbols
             .get(found.id())
-            .map(|found| found.symbol().name()),
+            .map(|found| found.value().name()),
         Some(found.name())
     );
     Ok(())
@@ -59,11 +59,11 @@ fn narrowing_composes_with_every_lookup_key() -> Result<()> {
 
     let index = map
         .symbols
-        .index_of(by_code.into())
+        .position(by_code)
         .ok_or(omap::Error::ObjectError)?;
     let at_index = map
         .symbols
-        .find_at(index)
+        .at(index)
         .and_then(|symbol| symbol.as_line_path())
         .ok_or(omap::Error::ObjectError)?;
 
@@ -80,7 +80,7 @@ fn narrowing_to_the_wrong_kind_is_none() -> Result<()> {
         .find_by_code(erosion_gully())
         .ok_or(omap::Error::ObjectError)?;
 
-    assert!(matches!(found.symbol(), Symbol::Line(_)));
+    assert!(matches!(found.value(), Symbol::Line(_)));
     assert!(found.as_line().is_some());
     assert!(found.as_line_path().is_some());
     assert!(found.as_path().is_some());
@@ -134,10 +134,7 @@ fn narrowing_from_a_bare_handle_goes_through_get() -> Result<()> {
         .and_then(|symbol| symbol.as_line_path())
         .ok_or(omap::Error::ObjectError)?;
 
-    assert_eq!(
-        map.symbols.index_of(narrowed.into()),
-        map.symbols.index_of(id)
-    );
+    assert_eq!(map.symbols.position(narrowed), map.symbols.position(id));
     Ok(())
 }
 
@@ -147,7 +144,7 @@ fn a_missing_symbol_is_none() -> Result<()> {
 
     assert!(map.symbols.find_by_code(Code::new(9999, 0, 0)).is_none());
     assert!(map.symbols.find_by_name("no such symbol").is_none());
-    assert!(map.symbols.find_at(map.symbols.len()).is_none());
+    assert!(map.symbols.at(map.symbols.len()).is_none());
     Ok(())
 }
 
@@ -165,7 +162,7 @@ fn the_handle_outlives_the_borrow() -> Result<()> {
     map.symbols.sort();
 
     assert_eq!(
-        map.symbols.get(id.into()).map(|symbol| symbol.code()),
+        map.symbols.get(id).map(|symbol| symbol.code()),
         Some(erosion_gully())
     );
     Ok(())
@@ -189,7 +186,7 @@ fn a_color_lookup_yields_the_handle_and_the_color() -> Result<()> {
 
     assert_eq!(found.name(), name);
     assert_eq!(
-        map.colors.get(found.id()).map(ColorRef::id),
+        map.colors.get(found.id()).map(omap::Entry::id),
         Some(found.id())
     );
     assert!(found.as_spot().is_some() || found.as_mixed().is_some());

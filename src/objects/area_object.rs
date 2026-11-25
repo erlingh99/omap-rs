@@ -1,3 +1,4 @@
+use crate::{Transformable, geo_referencing::try_transform_all};
 use std::collections::HashMap;
 
 use geo_types::{Coord, Polygon};
@@ -131,38 +132,6 @@ impl BezierPolygon {
         FlattenedPolygon::new(exterior, interiors)
     }
 
-    /// Transform every ring coordinate while preserving topology and metadata.
-    pub fn transform<F>(mut self, transform: F) -> Self
-    where
-        F: Fn(Coord) -> Coord,
-    {
-        self.exterior = self.exterior.transform(&transform);
-        self.interiors = self
-            .interiors
-            .into_iter()
-            .map(|ring| ring.transform(&transform))
-            .collect();
-        self
-    }
-
-    /// Try to transform every ring coordinate, stopping at the first error.
-    ///
-    /// # Errors
-    ///
-    /// Returns the first error produced by `transform`.
-    pub fn try_transform<E, F>(mut self, transform: F) -> std::result::Result<Self, E>
-    where
-        F: Fn(Coord) -> std::result::Result<Coord, E>,
-    {
-        self.exterior = self.exterior.try_transform(&transform)?;
-        self.interiors = self
-            .interiors
-            .into_iter()
-            .map(|ring| ring.try_transform(&transform))
-            .collect::<std::result::Result<_, _>>()?;
-        Ok(self)
-    }
-
     /// Reverse the winding order of every ring.
     pub fn reverse(&mut self) {
         self.exterior.reverse();
@@ -188,6 +157,18 @@ impl BezierPolygon {
             }
         }
         Ok(())
+    }
+}
+
+/// Every ring is transformed; topology and dash-point metadata are kept.
+impl Transformable for BezierPolygon {
+    fn try_transform<E>(
+        mut self,
+        transform: impl Fn(Coord) -> std::result::Result<Coord, E>,
+    ) -> std::result::Result<Self, E> {
+        self.exterior = self.exterior.try_transform(&transform)?;
+        self.interiors = try_transform_all(self.interiors, transform)?;
+        Ok(self)
     }
 }
 

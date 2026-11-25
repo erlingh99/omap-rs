@@ -4,158 +4,60 @@ use quick_xml::{
 };
 
 use super::{
-    Cmyk, Color, ColorComponent, ColorId, ColorKey, ColorRef, MixedColor, MixedColorId, Rgb,
-    SpotColor, SpotColorId, color::ColorParseReturn,
+    Cmyk, Color, ColorComponent, ColorId, MixedColor, MixedColorId, Rgb, SpotColor, SpotColorId,
+    color::ColorParseReturn,
 };
-use crate::arena::Arena;
-use crate::utils::{UnitF64, try_get_attr_raw};
-use crate::{Error, OmapSection, Result};
 
-/// An ordered set of map colors.
+use crate::utils::{UnitF64, try_get_attr_raw};
+use crate::{Collection, Entry, Error, OmapSection, Result};
+
+/// The map's colors, in priority order.
 ///
-/// Position in the set is the color's priority, and the priority is what the
-/// `.omap` format stores. A [`ColorId`] is independent of that: it keeps naming
-/// the same color across [`ColorSet::swap`], [`ColorSet::insert`] and
-/// [`ColorSet::remove_at`], and stops resolving once that color is removed.
+/// A color's position in the set is its priority, which is what the `.omap`
+/// format stores. A [`ColorId`] keeps naming the same color across
+/// [`Collection::swap`], [`Collection::insert`] and [`Collection::remove`];
+/// see [`Collection`] for everything a set does.
 ///
 /// A [`ColorId`] left over from a removed color contributes no color when the
-/// map is written, exactly as a dangling weak reference did.
-///
-/// # A handle belongs to one set
-///
-/// Handles are slot keys, not pointers, so they carry no record of which set
-/// minted them. Using one against a *different* [`ColorSet`] is not caught: it
-/// resolves to whatever occupies that slot, which is an unrelated color rather
-/// than a `None`. Keep a handle with the [`crate::Omap`] it came from.
-#[derive(Debug, Default, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct ColorSet(Arena<Color, ColorKey>);
+/// map is written.
+pub type ColorSet = Collection<ColorId, Color>;
 
 impl ColorSet {
-    /// Create a new [`ColorSet`]
-    pub fn new() -> Self {
-        Self(Arena::new())
-    }
-
-    /// Get the number of colors in the set.
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    /// Returns `true` if the color set contains no colors.
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Swap the priority of two colors. Both handles stay valid.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if either of the arguments are out of bounds
-    pub fn swap(&mut self, first: usize, second: usize) -> Result<()> {
-        if first < self.len() && second < self.len() {
-            self.0.swap(first, second);
-            Ok(())
-        } else {
-            Err(Error::MissingColorId)
-        }
-    }
-
-    /// Append a new color with the lowest priority.
-    pub fn push(&mut self, color: impl Into<Color>) -> ColorId {
-        ColorId(self.0.push(color.into()))
-    }
-
-    /// Insert a new color into the `ColorSet` with priority `index`, fails if `index > self.len()`
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::ColorError`] if `index` is greater than the number of colors.
-    pub fn insert(&mut self, index: usize, color: impl Into<Color>) -> Result<ColorId> {
-        if index > self.len() {
-            return Err(Error::ColorError);
-        }
-        Ok(ColorId(self.0.insert(index, color.into())))
-    }
-
-    /// Remove a color by its priority index.
-    pub fn remove_at(&mut self, priority: usize) -> Option<Color> {
-        self.0.remove_at(priority)
-    }
-
-    /// Remove a color by its handle.
-    pub fn remove(&mut self, id: ColorId) -> Option<Color> {
-        self.0.remove(id.0)
-    }
-
-    /// Returns `true` if `id` names a color still in this set.
-    pub fn contains(&self, id: ColorId) -> bool {
-        self.0.contains(id.0)
-    }
-
-    /// Get a color by its handle.
-    pub fn get(&self, id: ColorId) -> Option<ColorRef<'_>> {
-        Some(ColorRef::new(id, self.0.get(id.0)?))
-    }
-
-    /// Mutably get a color by its handle.
-    pub fn get_mut(&mut self, id: ColorId) -> Option<&mut Color> {
-        self.0.get_mut(id.0)
-    }
-
     /// Get a spot color by its handle. Cannot return a mixed color.
     pub fn spot_color(&self, id: SpotColorId) -> Option<&SpotColor> {
-        match self.0.get(id.0) {
-            Some(Color::SpotColor(color)) => Some(color),
-            _ => None,
+        match self.get(id)?.value() {
+            Color::SpotColor(color) => Some(color),
+            Color::MixedColor(_) => None,
         }
     }
 
     /// Mutably get a spot color by its handle.
     pub fn spot_color_mut(&mut self, id: SpotColorId) -> Option<&mut SpotColor> {
-        match self.0.get_mut(id.0) {
-            Some(Color::SpotColor(color)) => Some(color),
-            _ => None,
+        match self.get_mut(id)? {
+            Color::SpotColor(color) => Some(color),
+            Color::MixedColor(_) => None,
         }
     }
 
     /// Get a mixed color by its handle. Cannot return a spot color.
     pub fn mixed_color(&self, id: MixedColorId) -> Option<&MixedColor> {
-        match self.0.get(id.0) {
-            Some(Color::MixedColor(color)) => Some(color),
-            _ => None,
+        match self.get(id)?.value() {
+            Color::MixedColor(color) => Some(color),
+            Color::SpotColor(_) => None,
         }
     }
 
     /// Mutably get a mixed color by its handle.
     pub fn mixed_color_mut(&mut self, id: MixedColorId) -> Option<&mut MixedColor> {
-        match self.0.get_mut(id.0) {
-            Some(Color::MixedColor(color)) => Some(color),
-            _ => None,
+        match self.get_mut(id)? {
+            Color::MixedColor(color) => Some(color),
+            Color::SpotColor(_) => None,
         }
     }
 
-    /// Mutably get a color by its priority index.
-    pub fn color_by_priority_mut(&mut self, priority: usize) -> Option<&mut Color> {
-        self.0.get_at_mut(priority)
-    }
-
-    /// Get the priority index of a color, or `None` if it is not in this set.
-    pub fn priority_of(&self, id: ColorId) -> Option<usize> {
-        self.0.position(id.0)
-    }
-
     /// Find a color by exact name match. The first match is returned.
-    pub fn find_by_name(&self, name: &str) -> Option<ColorRef<'_>> {
+    pub fn find_by_name(&self, name: &str) -> Option<Entry<'_, ColorId, Color>> {
         self.iter().find(|color| color.name() == name)
-    }
-
-    /// Get the color with the given priority index.
-    pub fn find_by_priority(&self, priority: usize) -> Option<ColorRef<'_>> {
-        Some(ColorRef::new(
-            ColorId(self.0.id_at(priority)?),
-            self.0.get_at(priority)?,
-        ))
     }
 
     /// Get the effective CMYK value of a color in this set.
@@ -177,27 +79,25 @@ impl ColorSet {
     pub fn rgb(&self, id: ColorId) -> Result<Rgb> {
         self.get(id).ok_or(Error::ColorError)?.rgb(self)
     }
+}
 
-    /// Iterate over the colors and their handles, in priority order.
-    pub fn iter(&self) -> impl Iterator<Item = ColorRef<'_>> {
-        self.0
-            .iter()
-            .map(|(raw, color)| ColorRef::new(ColorId(raw), color))
+/// Narrowing a looked-up color to a typed handle.
+///
+/// ```
+/// # use omap::Omap;
+/// # fn example(map: &Omap) {
+/// let purple = map.colors.find_by_name("Purple").and_then(|color| color.as_spot());
+/// # }
+/// ```
+impl Entry<'_, ColorId, Color> {
+    /// Narrow to a spot color handle, or `None` if this names a mixed color.
+    pub fn as_spot(self) -> Option<SpotColorId> {
+        SpotColorId::try_from(self).ok()
     }
 
-    /// Iterate over the colors in priority order.
-    pub fn values(&self) -> impl Iterator<Item = &Color> {
-        self.0.values()
-    }
-
-    /// Mutably iterate over the colors, in no particular order.
-    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Color> {
-        self.0.values_mut()
-    }
-
-    /// Iterate over handles to every color, in priority order.
-    pub fn ids(&self) -> impl Iterator<Item = ColorId> {
-        self.iter().map(ColorRef::id)
+    /// Narrow to a mixed color handle, or `None` if this names a spot color.
+    pub fn as_mixed(self) -> Option<MixedColorId> {
+        MixedColorId::try_from(self).ok()
     }
 }
 
@@ -246,7 +146,7 @@ impl ColorSet {
         }
         pending.sort_by_key(|(priority, _, _)| *priority);
 
-        let mut color_set = Self(Arena::with_capacity(pending.len()));
+        let mut color_set = Self::with_capacity(pending.len());
         let mut all_components = Vec::with_capacity(pending.len());
         for (_, color, components) in pending {
             let _id = color_set.push(color);
@@ -261,14 +161,14 @@ impl ColorSet {
                 .into_iter()
                 .filter_map(|(priority, factor)| {
                     let priority = usize::try_from(priority).ok()?;
-                    let color = color_set.find_by_priority(priority)?.as_spot()?;
+                    let color = color_set.at(priority)?.as_spot()?;
                     Some(ColorComponent {
                         factor: UnitF64::clamped_from(factor),
                         color,
                     })
                 })
                 .collect();
-            if let Some(Color::MixedColor(color)) = color_set.color_by_priority_mut(position) {
+            if let Some(Color::MixedColor(color)) = color_set.at_mut(position) {
                 color.components = resolved;
             }
         }

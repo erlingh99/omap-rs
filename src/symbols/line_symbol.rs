@@ -148,45 +148,10 @@ impl LineSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<ColorId> {
-        let mut colors = Vec::new();
-
-        if let SymbolColor::Color(id) = &self.color {
-            colors.push(*id);
-        }
-
-        if let Some(border) = &self.border {
-            match border {
-                BorderStyle::SymmetricBorder { both } => {
-                    if let SymbolColor::Color(id) = &both.color {
-                        colors.push(*id);
-                    }
-                }
-                BorderStyle::AsymmetricBorder { left, right } => {
-                    if let SymbolColor::Color(id) = &left.color {
-                        colors.push(*id);
-                    }
-                    if let SymbolColor::Color(id) = &right.color {
-                        colors.push(*id);
-                    }
-                }
-            }
-        }
-
-        if let Some(start) = &self.start_symbol {
-            colors.extend(start.colors());
-        }
-        if let Some(dash) = &self.dash_symbol {
-            colors.extend(dash.dash_symbol.colors());
-        }
-        if let Some(mid) = &self.mid_symbol {
-            colors.extend(mid.mid_symbol.colors());
-        }
-        if let Some(end) = &self.end_symbol {
-            colors.extend(end.colors());
-        }
-
-        colors
+    /// Every color used in this symbol definition, its borders' and point
+    /// symbols' included.
+    pub fn colors(&self) -> impl Iterator<Item = ColorId> {
+        crate::references::own_colors(self)
     }
 }
 

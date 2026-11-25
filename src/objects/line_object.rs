@@ -1,3 +1,4 @@
+use crate::Transformable as _;
 use std::collections::HashMap;
 
 use geo_types::Coord;

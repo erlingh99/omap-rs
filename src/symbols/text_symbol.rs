@@ -190,36 +190,9 @@ impl TextSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<ColorId> {
-        let mut colors = Vec::new();
-
-        if let SymbolColor::Color(id) = &self.color {
-            colors.push(*id);
-        }
-
-        if let Some(underline) = &self.line_below
-            && let SymbolColor::Color(id) = &underline.color
-        {
-            colors.push(*id);
-        }
-
-        if let Some(framing) = &self.framing_mode {
-            match framing {
-                FramingMode::NoFraming => (),
-                FramingMode::LineFraming(line_framing) => {
-                    if let SymbolColor::Color(id) = &line_framing.color {
-                        colors.push(*id);
-                    }
-                }
-                FramingMode::ShadowFraming(shadow_framing) => {
-                    if let SymbolColor::Color(id) = &shadow_framing.color {
-                        colors.push(*id);
-                    }
-                }
-            }
-        }
-
-        colors
+    /// Every color used in this symbol definition.
+    pub fn colors(&self) -> impl Iterator<Item = ColorId> {
+        crate::references::own_colors(self)
     }
 
     #[expect(

@@ -325,40 +325,9 @@ impl AreaSymbol {
         self
     }
 
-    pub fn colors(&self) -> Vec<ColorId> {
-        let mut colors = Vec::new();
-        if let SymbolColor::Color(id) = &self.color {
-            colors.push(*id);
-        }
-
-        for pattern in &self.patterns {
-            match pattern {
-                FillPattern::LinePattern {
-                    angle: _,
-                    line_spacing: _,
-                    line_offset: _,
-                    line_color,
-                    line_width: _,
-                    rotatable: _,
-                } => {
-                    if let SymbolColor::Color(id) = line_color {
-                        colors.push(*id);
-                    }
-                }
-                FillPattern::PointPattern {
-                    clip_options: _,
-                    angle: _,
-                    line_spacing: _,
-                    line_offset: _,
-                    offset_along_line: _,
-                    point_distance: _,
-                    point,
-                    rotatable: _,
-                } => colors.extend(point.colors()),
-            }
-        }
-
-        colors
+    /// Every color used in this symbol definition, its patterns' included.
+    pub fn colors(&self) -> impl Iterator<Item = ColorId> {
+        crate::references::own_colors(self)
     }
 
     pub(super) fn parse<R: std::io::BufRead>(
