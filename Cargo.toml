@@ -1,8 +1,8 @@
 [package]
 name = "omap"
-version = "0.13.0"
+version = "0.14.0"
 edition = "2024"
-authors = ["Øyvind Hjermstad <@yvind>"]
+authors = ["Øyvind Hjermstad <@yvind>", "Erling Hjermstad <@erlingh99>"]
 description = "Interact with or write new Open Orienteering Mapper omap-files"
 repository = "https://github.com/yvind/omap-rs"
 readme = "README.md"
