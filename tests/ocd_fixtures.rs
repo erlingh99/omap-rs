@@ -5,11 +5,6 @@
 //! writing, and holds what the map it was exported from holds.
 
 #![cfg(feature = "ocd")]
-#![expect(
-    clippy::expect_used,
-    reason = "a test should fail loudly at the point it breaks"
-)]
-
 use omap::geo_referencing::CrsType;
 use omap::objects::{HorizontalAlign, MapObject, VerticalAlign};
 use omap::ocd;

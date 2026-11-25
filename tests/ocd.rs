@@ -1,11 +1,6 @@
 //! Reading and writing the OCAD format.
 
 #![cfg(feature = "ocd")]
-#![expect(
-    clippy::expect_used,
-    reason = "a test should fail loudly at the point it breaks"
-)]
-
 use omap::{format, ocd};
 
 /// A bare 60-byte OCAD file header of `version`, with no index blocks.
